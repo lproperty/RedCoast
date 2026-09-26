@@ -1,0 +1,16 @@
+{
+  "name": "RedCoast · East Coast Air Surveillance",
+  "short_name": "RedCoast",
+  "description": "Live radar of aircraft over Singapore's East Coast and Changi, with where to look from your balcony.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#010603",
+  "theme_color": "#010603",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

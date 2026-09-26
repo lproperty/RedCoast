@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "redcoast-relay",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "vars": {
+    // Only these sites may read the relay from a browser.
+    "ALLOWED_ORIGINS": "https://lproperty.github.io,http://localhost:*,http://127.0.0.1:*"
+  },
+  // Optional secrets (free OpenSky account → 10x more OpenSky requests per day):
+  //   npx wrangler secret put OPENSKY_CLIENT_ID
+  //   npx wrangler secret put OPENSKY_CLIENT_SECRET
+  "observability": { "enabled": false }
+}

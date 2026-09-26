@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#010603" />
+    <meta name="color-scheme" content="dark" />
+    <title>RedCoast · East Coast Air Surveillance</title>
+    <meta
+      name="description"
+      content="A military-style radar scope of live aircraft over Singapore's East Coast and Changi Airport: routes, aircraft types, and exactly where to look from your balcony."
+    />
+    <meta property="og:title" content="RedCoast · East Coast Air Surveillance" />
+    <meta property="og:description" content="Live radar of aircraft over Singapore's East Coast and Changi." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RedCoast" />
+  </head>
+  <body>
+    <header class="hud">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="16" cy="16" r="8" fill="none" stroke="currentColor" stroke-width="1" opacity=".6" />
+          <path d="M16 16 L16 2 A14 14 0 0 1 28 9 Z" fill="currentColor" opacity=".45" />
+          <circle cx="22" cy="10" r="1.8" fill="currentColor" />
+        </svg>
+        <span class="name">REDCOAST</span>
+        <span class="sub">AIR SURVEILLANCE · EAST SECTOR</span>
+      </div>
+      <div class="status" role="status">
+        <span class="led" data-state="connecting" aria-hidden="true"></span>
+        <span class="link-text">CONNECTING</span>
+        <span class="trk" title="Airborne contacts">TRK <b>0</b></span>
+        <span class="clock"><b class="sgt">--:--:--</b> SGT <span class="zulu">------Z</span></span>
+      </div>
+      <nav class="hud-btns" aria-label="Controls">
+        <button type="button" data-act="point" aria-pressed="false" hidden title="Point your phone at the sky">⌖ POINT</button>
+        <button type="button" data-act="sound" aria-pressed="false" title="Sound (S)">SND OFF</button>
+        <button type="button" data-act="settings" title="Settings (,)" aria-label="Settings">⚙ SET</button>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="scope-panel panel" aria-label="Radar scope">
+        <canvas class="scope" role="img" aria-label="Radar display of aircraft around your position"></canvas>
+        <div class="ovl tl">
+          <button type="button" data-act="mode" title="Scope mode (M)">PPI 360°</button>
+          <button type="button" data-act="orient" title="Orientation (N)">VIEW UP</button>
+        </div>
+        <div class="ovl tr">
+          <div class="flow" title="Changi runways in use, from recent arrivals and departures"></div>
+          <div class="sim-banner" hidden>SIMULATION · NOT LIVE</div>
+        </div>
+        <div class="ovl bl">
+          <div class="cursor" aria-hidden="true"></div>
+          <div class="post"></div>
+        </div>
+        <div class="ovl br">
+          <button type="button" data-act="range-out" aria-label="Zoom out">−</button>
+          <span class="range" aria-live="polite">25 KM</span>
+          <button type="button" data-act="range-in" aria-label="Zoom in">+</button>
+        </div>
+        <button type="button" class="pointing" hidden></button>
+        <div class="toasts" aria-live="polite"></div>
+        <div class="nolink" hidden>
+          <h2>NO DATA LINK</h2>
+          <p class="why"></p>
+          <div class="row">
+            <button type="button" data-act="retry">RETRY</button>
+            <button type="button" data-act="run-sim">RUN SIMULATION</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sky-panel panel" aria-label="Sky view from your post">
+        <header class="panel-head">
+          <h2>SKY VIEW <span class="sky-facing dim"></span></h2>
+          <span class="sky-meta"><span class="sky-next"></span> · <span class="sky-light"></span></span>
+        </header>
+        <canvas class="sky" role="img" aria-label="Aircraft positions in the sky as seen from your post"></canvas>
+      </section>
+
+      <aside class="side">
+        <section class="detail panel" hidden aria-label="Target details"></section>
+        <section class="contacts-panel panel" aria-label="Contacts"></section>
+        <section class="log-panel panel" aria-label="Tactical log"></section>
+      </aside>
+    </main>
+
+    <div class="crt" aria-hidden="true"></div>
+    <div class="boot" aria-hidden="true"><pre></pre></div>
+    <noscript><p style="padding: 2em">RedCoast needs JavaScript to draw the radar.</p></noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

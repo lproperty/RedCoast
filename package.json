@@ -1,0 +1,30 @@
+{
+  "name": "redcoast",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Balcony air-surveillance radar for aircraft over Singapore's East Coast and Changi Airport.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "basemap": "node scripts/build-basemap.mjs",
+    "relay:deploy": "npm --prefix relay run deploy"
+  },
+  "dependencies": {
+    "@fontsource/b612-mono": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}

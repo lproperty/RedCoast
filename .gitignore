@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Raw Overpass downloads used by scripts/build-basemap.mjs
+scripts/.cache/
+
+# Cloudflare Worker local state and secrets
+relay/node_modules/
+relay/.wrangler/
+relay/.dev.vars
+.dev.vars
+.env.local
