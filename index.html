@@ -18,7 +18,9 @@
     <link rel="manifest" href="./manifest.webmanifest?v=pixel-fighter-4" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Opaque: since iOS 26, a home-screen app drawn under a translucent status bar gets a blur band
+         about 35 pt below it, over the HUD. iOS reads this once, when the app is added to the Home Screen. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="RedCoast" />
   </head>
   <body>

@@ -1313,6 +1313,15 @@ body.no-crt .crt {
   }
 }
 
+/* A home-screen app added while the status bar was translucent keeps drawing under it until it's
+   re-added, and iOS 26+ blurs about 35 pt below the status bar: start the HUD below the blur.
+   Under the opaque status bar the top inset is 0, so this adds nothing. */
+@media (max-width: 1023px) and (display-mode: standalone) {
+  .hud {
+    padding-top: calc(6px + env(safe-area-inset-top) + min(38px, env(safe-area-inset-top) * 100));
+  }
+}
+
 /* Phones held sideways: scope on the left, everything else on the right. */
 @media (max-width: 1023px) and (orientation: landscape) and (max-height: 540px) {
   body {
