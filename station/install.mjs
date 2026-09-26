@@ -144,7 +144,12 @@ writeFileSync(
 `,
 );
 launchctl('bootout', `${DOMAIN}/${LABEL}`);
-const boot = launchctl('bootstrap', DOMAIN, PLIST);
+// bootout returns before the old station has exited, and bootstrap fails (EIO) until it has.
+let boot = launchctl('bootstrap', DOMAIN, PLIST);
+for (let i = 0; boot.status !== 0 && i < 20; i++) {
+  await new Promise((r) => setTimeout(r, 500));
+  boot = launchctl('bootstrap', DOMAIN, PLIST);
+}
 if (boot.status !== 0) {
   console.error(`launchctl bootstrap failed: ${boot.stderr || boot.stdout}`);
   process.exit(1);
