@@ -206,7 +206,8 @@ export class App {
       if (!this.pictureBuilt) t.flags.announced = true;
     }
     this.analyze();
-    if (!this.pictureBuilt) {
+    // The first response with real data builds the picture (not an empty one while the station wakes).
+    if (!this.pictureBuilt && anyOk) {
       this.pictureBuilt = true;
       const air = this.store.list().filter((t) => !t.a.gnd).length;
       this.log.add(`AIR PICTURE BUILT · ${air} AIRBORNE CONTACTS`, 'system');
