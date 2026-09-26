@@ -99,7 +99,7 @@ export function sanitize(raw: unknown): Settings {
   const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}) } as Settings;
   const o = { ...DEFAULTS.observer, ...(s.observer ?? {}) };
   s.observer = {
-    name: String(o.name ?? 'My post').slice(0, 60),
+    name: String(o.name ?? 'Balcony').slice(0, 60),
     lat: clampNum(o.lat, -85, 85, DEFAULT_POST.lat),
     lon: clampNum(o.lon, -180, 180, DEFAULT_POST.lon),
     heightM: clampNum(o.heightM, -50, 1000, DEFAULT_POST.heightM),
@@ -136,7 +136,7 @@ export function parseHash(hash: string): Partial<Settings> | undefined {
   if (hasPos && Number.isFinite(lat) && Number.isFinite(lon)) {
     out.observer = {
       ...DEFAULTS.observer,
-      name: p.get('name') ?? 'My post',
+      name: p.get('name') ?? 'Balcony',
       lat,
       lon,
       heightM: p.has('h') ? Number(p.get('h')) : DEFAULTS.observer.heightM,

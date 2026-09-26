@@ -147,7 +147,7 @@ export class SetupDialog {
     this.store.update({
       configured: true,
       observer: {
-        name: this.input('name').value.trim() || 'My post',
+        name: this.input('name').value.trim() || 'Balcony',
         lat: pos.lat,
         lon: pos.lon,
         facing: Number.isFinite(facing) ? normDeg(facing) : 180,

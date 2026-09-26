@@ -65,6 +65,8 @@ describe('formatting', () => {
   it('prefers the IATA flight number people know', () => {
     const t = { a: { cs: 'SIA321' }, route: undefined, hex: 'abc' } as unknown as Parameters<typeof displayName>[0];
     expect(displayName(t)).toBe('SQ321');
+    const odd = { a: { cs: 'XAX512' }, route: { flight: '512' }, hex: 'abc' } as unknown as Parameters<typeof displayName>[0];
+    expect(displayName(odd)).toBe('XAX512');
   });
 });
 

@@ -5,7 +5,9 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
 
 **Live:** https://lproperty.github.io/RedCoast/
 
-![RedCoast on a desktop: radar scope, sky view, contacts and target panel](docs/screenshot-desktop.png)
+![RedCoast on a desktop: radar scope, sky view, contacts and target panel](docs/screenshot-desktop.jpg)
+
+<img src="docs/screenshot-phone.jpg" alt="RedCoast on a phone: radar scope with the locked target's details in a bottom sheet" width="300" align="right">
 
 ## What it does
 
