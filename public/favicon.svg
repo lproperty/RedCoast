@@ -1,15 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <title>RedCoast aircraft radar</title>
-  <!-- Full, opaque canvas: iOS applies its own home-screen corner mask. -->
-  <rect width="512" height="512" fill="#ffffff" />
-  <!-- The entire mark fits inside the maskable icon's 40% safe radius. -->
-  <circle cx="256" cy="256" r="184" fill="#ff0033" />
-  <g fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round">
-    <path d="M386 256 A130 130 0 1 1 256 126" />
-    <path d="M320.09 293 A74 74 0 1 1 219 191.91" />
-  </g>
-  <g transform="translate(302 206) rotate(45)">
-    <path d="M0 -65 C7 -65 11 -57 11 -47 L11 -15 L56 14 L56 29 L11 13 L11 42 L29 55 L29 67 L0 57 L-29 67 L-29 55 L-11 42 L-11 13 L-56 29 L-56 14 L-11 -15 L-11 -47 C-11 -57 -7 -65 0 -65 Z"
-      fill="#ffffff" stroke="#ff0033" stroke-width="12" stroke-linejoin="round" paint-order="stroke" />
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>RedCoast — Pixel fighter</title><rect width="512" height="512" fill="#fff" /><g transform="translate(151 130) scale(14)" fill="#ff0033">
+  <path d="M7 0h1v1H7z M6 1h3v5H6z M5 6h5v1H5z M4 7h7v1H4z
+    M3 8h9v1H3z M2 9h11v1H2z M1 10h13v1H1z M0 11h15v1H0z
+    M0 12h5v1H0z M6 12h3v3H6z M10 12h5v1H10z
+    M4 13h1v1H4z M10 13h1v1H10z M5 15h5v1H5z
+    M4 16h3v1H4z M8 16h3v1H8z M4 17h2v1H4z M9 17h2v1H9z" /><path d="M7 4h1v4H7z" fill="#fff" /></g></svg>

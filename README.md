@@ -45,9 +45,9 @@ Keyboard: `+`/`−` range · `M` scope mode · `N` north-up · `J`/`K` next/prev
 ### Add to your iPhone home screen
 
 Open [RedCoast](https://lproperty.github.io/RedCoast/) in Safari, tap **Share → Add to Home Screen**,
-leave **Open as Web App** enabled if shown, then tap **Add**. The red-and-white aircraft radar icon
+leave **Open as Web App** enabled if shown, then tap **Add**. The red-and-white pixel fighter icon
 opens RedCoast in its own window. See [Apple's guide](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios).
-If an existing home-screen shortcut still shows the old green icon, remove that shortcut and add it again.
+If an existing home-screen shortcut still shows an older icon, remove that shortcut and add it again.
 
 ### Reading the scope
 
@@ -129,7 +129,7 @@ npm run basemap    # rebuild src/map/basemap.json from OpenStreetMap (add --refr
 npm run icons      # regenerate Safari/PWA PNGs from public/favicon.svg
 ```
 
-The app icons use a white background and a red aircraft radar mark. Edit `public/favicon.svg`, then run
+The app icons use a white background with a small red pixel-art fighter. Edit `public/favicon.svg`, then run
 `npm run icons` and commit the PNGs. Keep the artwork within the central 40% radius for maskable icons;
 the square background is opaque so each device can apply its own corner shape. When changing the icons,
 bump the `v=` value in `index.html` and `public/manifest.webmanifest` so browsers request the new assets.
