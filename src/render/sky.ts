@@ -33,7 +33,17 @@ export interface SkyInput {
 
 const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
 const TAU = Math.PI * 2;
-const EL_LINES = [5, 10, 20, 30, 45, 60];
+const EL_LINES = [5, 10, 20, 30, 60];
+/** Degrees: the smaller, the more of the strip goes to the low sky. */
+const EL_K = 2;
+
+/**
+ * How far up the strip an elevation sits, 0..1. A log scale gives the low sky, where nearly all
+ * aircraft are, most of the room: 5° is a third of the way up, 10° nearly half.
+ */
+function elFrac(el: number): number {
+  return Math.log(1 + Math.min(90, el) / EL_K) / Math.log(1 + 90 / EL_K);
+}
 /** The Moon's darker "seas" as [x, y, radius] on a unit disc, so it reads as the Moon, not a ball. */
 const MARIA: [number, number, number][] = [
   [-0.35, -0.3, 0.3],
@@ -97,7 +107,7 @@ export class SkyView {
 
   private y(el: number): number {
     if (el < 0) return this.horizonY + Math.min(8, -el * 3);
-    return this.horizonY - this.plotH * Math.sqrt(Math.min(90, el) / 90);
+    return this.horizonY - this.plotH * elFrac(el);
   }
 
   hit(sx: number, sy: number): Track | undefined {
@@ -305,7 +315,7 @@ export class SkyView {
       ctx.arc(x, y, r * 3, 0, TAU);
       ctx.fill();
       // The lit limb points at the Sun, wherever it is (even below the horizon).
-      const sunY = this.horizonY - this.plotH * Math.sign(s.sun.el) * Math.sqrt(Math.min(90, Math.abs(s.sun.el)) / 90);
+      const sunY = this.horizonY - this.plotH * Math.sign(s.sun.el) * elFrac(Math.abs(s.sun.el));
       const angle = Math.atan2(sunY - y, this.x(s.sun.az) - x);
       const k = 1 - 2 * s.moon.fraction;
       ctx.save();

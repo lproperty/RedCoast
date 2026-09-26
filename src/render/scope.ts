@@ -544,15 +544,27 @@ export class Scope {
         ctx.fillText(end.id, lx + 6, ly);
       }
     }
+    // Runways as a chart draws them: slim outlined strips, the ones Changi is using brighter.
     for (const r of RUNWAYS) {
       const [ax, ay] = this.project(...s.frame.toXY(r.a.lat, r.a.lon));
       const [bx, by] = this.project(...s.frame.toXY(r.b.lat, r.b.lon));
-      ctx.strokeStyle = p.runway;
-      ctx.lineWidth = Math.max(2, (r.widthM / 1000) * this.kmPx);
-      ctx.lineCap = 'butt';
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 1) continue;
+      const half = Math.max(1.5, ((r.widthM / 1000) * this.kmPx) / 2);
+      const nx = (-(by - ay) / len) * half;
+      const ny = ((bx - ax) / len) * half;
+      const active = r.ap === 'WSSS' && r.ids.some((id) => s.activeRunways.includes(id));
       ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
+      ctx.moveTo(ax + nx, ay + ny);
+      ctx.lineTo(bx + nx, by + ny);
+      ctx.lineTo(bx - nx, by - ny);
+      ctx.lineTo(ax - nx, ay - ny);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${p.rgb},${active ? 0.3 : 0.16})`;
+      ctx.fill();
+      ctx.strokeStyle = active ? p.centerlineActive : p.runway;
+      ctx.lineWidth = 0.8;
+      ctx.lineJoin = 'miter';
       ctx.stroke();
     }
   }
