@@ -247,8 +247,12 @@ export class App {
 
     this.sun = sunPosition(now, obs.lat, obs.lon);
     this.moon = moonPosition(now, obs.lat, obs.lon);
+    const before = this.seeing.air;
     this.seeing = conditionsFor(this.wx, s.visKm, this.sun.el, now);
     const air = this.seeing.air;
+    // New weather, a new setting or nightfall changes what's visible without any plane moving:
+    // take the new picture as it is, without "entering your view" alerts.
+    const quiet = air.rangeKm !== before.rangeKm || air.ceilingFt !== before.ceilingFt;
 
     for (const t of this.store.list()) {
       t.route = t.a.sim ? simRoute(t.a.cs, t.a.sim.from, t.a.sim.to) : this.enricher.route(t.a.cs);
@@ -265,7 +269,7 @@ export class App {
         const priority = 100 - t.sight.groundKm + (t.sight.inFov ? 30 : 0);
         this.enricher.want(t.hex, t.a.cs, priority, t === this.selected);
       }
-      this.events(t, now, rangeKm);
+      this.events(t, now, rangeKm, quiet);
     }
 
     for (const t of this.store.prune(now)) {
@@ -312,7 +316,7 @@ export class App {
   }
 
   /** Log lines, sounds and toasts for things worth knowing about. */
-  private events(t: Track, now: number, rangeKm: number): void {
+  private events(t: Track, now: number, rangeKm: number, quiet: boolean): void {
     const s = this.settings.get();
     const tn = `TN${String(t.tn).padStart(3, '0')}`;
     const name = displayName(t);
@@ -350,7 +354,7 @@ export class App {
     }
     if (t.sight.visible !== t.flags.inView) {
       t.flags.inView = t.sight.visible;
-      if (t.sight.visible) {
+      if (t.sight.visible && !quiet) {
         const guide = lookGuide(t.sight).text;
         this.log.add(`${tn} ${name} ENTERING YOUR VIEW · ${guide.toUpperCase()}`, 'view', t.hex);
         if (s.alertView && now - this.lastViewToast > 6000) {
@@ -552,6 +556,7 @@ export class App {
       );
     }
     if (l.error) lines.push(`Last error: ${l.error}`);
+    if (this.wx) lines.push(`Changi weather (${timeSgt(this.wx.t)} SGT): ${this.wx.raw}`);
     return lines.join('\n');
   }
 
