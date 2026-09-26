@@ -166,8 +166,8 @@ const TEXT_FLOOR = 0.8;
 
 const rgbCache = new Map<string, [number, number, number]>();
 
-/** A "#rrggbb" colour blended towards white by f (0..1). */
-function whiten(color: string, f: number): string {
+/** A "#rrggbb" colour blended towards white by f (0..1), optionally see-through. */
+function whiten(color: string, f: number, alpha = 1): string {
   let c = rgbCache.get(color);
   if (!c) {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
@@ -176,7 +176,7 @@ function whiten(color: string, f: number): string {
     rgbCache.set(color, c);
   }
   const m = (v: number) => Math.round(v + (255 - v) * f);
-  return `rgb(${m(c[0])},${m(c[1])},${m(c[2])})`;
+  return `rgba(${m(c[0])},${m(c[1])},${m(c[2])},${alpha})`;
 }
 
 export class Scope {
@@ -288,6 +288,11 @@ export class Scope {
   /** Line spacing of the data blocks. */
   private get lineH(): number {
     return this.small ? 13 : 12;
+  }
+
+  /** Half the size of a contact's symbol. */
+  private get symbolR(): number {
+    return this.small ? 6.2 : 5.5;
   }
 
   /** Local km (east, north) → CSS pixels. */
@@ -756,7 +761,7 @@ export class Scope {
   /** The contact's symbol. When the sweep has just lit it, it flares: whiter, bolder, filled and glowing. */
   private drawSymbol(ctx: CanvasRenderingContext2D, t: Track, x: number, y: number, color: string, flash = 0): void {
     const lit = flash > 0.02;
-    const k = (this.small ? 6.2 : 5.5) * (1 + 0.15 * flash);
+    const k = this.symbolR * (1 + 0.15 * flash);
     ctx.strokeStyle = lit ? whiten(color, 0.55 * flash) : color;
     ctx.fillStyle = ctx.strokeStyle;
     ctx.lineWidth = (this.small ? 1.7 : 1.5) + 0.7 * flash;
@@ -996,22 +1001,32 @@ export class Scope {
           ctx.fillRect(hx - 1, hy - 1, 2, 2);
         }
       }
-      // The leader line, where it will be in a minute, flares with the symbol.
-      if (c.lead) {
+      // The leader line, where it will be in a minute: from just outside the symbol, fading
+      // away towards the tip, and flaring with the symbol.
+      const r0 = this.symbolR + 2.5;
+      const len = c.lead ? Math.hypot(c.lead[0] - x, c.lead[1] - y) : 0;
+      if (c.lead && len > r0 + 2) {
         const [fx, fy] = c.lead;
+        const sx = x + ((fx - x) / len) * r0;
+        const sy = y + ((fy - y) / len) * r0;
         const lit = c.flash > 0.02;
+        const fade = ctx.createLinearGradient(sx, sy, fx, fy);
+        fade.addColorStop(0, whiten(color, 0.5 * c.flash, 0.95));
+        fade.addColorStop(1, whiten(color, 0.5 * c.flash, 0));
         ctx.globalAlpha = c.body;
-        ctx.strokeStyle = lit ? whiten(color, 0.5 * c.flash) : color;
-        ctx.lineWidth = (this.small ? 1.2 : 1) + 0.9 * c.flash;
+        ctx.strokeStyle = fade;
+        ctx.lineWidth = (this.small ? 1.6 : 1.4) + 0.9 * c.flash;
+        ctx.lineCap = 'round';
         if (lit) {
           ctx.shadowColor = color;
           ctx.shadowBlur = 8 * c.flash * this.dpr;
         }
         ctx.beginPath();
-        ctx.moveTo(x, y);
+        ctx.moveTo(sx, sy);
         ctx.lineTo(fx, fy);
         ctx.stroke();
         ctx.shadowBlur = 0;
+        ctx.lineCap = 'butt';
       }
     }
     ctx.globalAlpha = 1;

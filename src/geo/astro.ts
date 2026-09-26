@@ -102,10 +102,3 @@ export function moonPosition(ms: number, lat: number, lon: number): MoonInfo {
   };
 }
 
-export type Daylight = 'day' | 'twilight' | 'night';
-
-export function daylight(sunEl: number): Daylight {
-  if (sunEl > 0) return 'day';
-  if (sunEl > -6) return 'twilight';
-  return 'night';
-}

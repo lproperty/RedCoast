@@ -7,7 +7,7 @@ import type { SourceStatus, WeatherReport } from '../data/feed.ts';
 import { Simulator } from '../data/simulator.ts';
 import { Poller, ReadsbUrlSource, RelaySource, SimSource, type FeedSource, type PollResult } from '../data/source.ts';
 import { legProgress, Enricher, simRoute } from '../enrich/lookup.ts';
-import { daylight, moonPosition, sunPosition, type MoonInfo, type SkyBody } from '../geo/astro.ts';
+import { moonPosition, sunPosition, type MoonInfo, type SkyBody } from '../geo/astro.ts';
 import { compassPoint, DEG, KM_PER_NM, LocalFrame, normDeg } from '../geo/geo.ts';
 import { Scope, type Corners } from '../render/scope.ts';
 import { SkyView } from '../render/sky.ts';
@@ -461,8 +461,6 @@ export class App {
     const seeing = fmtSeeing(this.seeing, s.units);
     $('.sky-next').textContent =
       `${inView} IN VIEW${seeing ? ` · ${seeing}` : ''}${next ? ` · NEXT ${displayName(next)} IN ${fmtDuration(next.viewEtaS!)}` : ''}`;
-    const light = daylight(this.sun.el);
-    $('.sky-light').textContent = light === 'day' ? 'DAY' : light === 'twilight' ? 'TWILIGHT' : 'NIGHT · LOOK FOR LIGHTS';
 
     const pointedEl = $('.pointing');
     pointedEl.hidden = !this.pointing;
