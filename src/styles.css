@@ -169,7 +169,10 @@ kbd {
 
 /* ------------------------------------------------------------ HUD */
 
+/* Above the CRT overlay: the HUD is the console, not the screen, so it stays crisp. */
 .hud {
+  position: relative;
+  z-index: 31;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -280,6 +283,11 @@ kbd {
   gap: 8px;
   padding: 8px;
   min-height: 0;
+}
+
+/* Sector mode: the scope shrinks to fit the fan (app.ts sets --scope-fit) and the sky view takes the rest. */
+body.sector-fit .layout {
+  grid-template-rows: minmax(0, var(--scope-fit)) minmax(var(--sky-h), 1fr);
 }
 
 .panel {
@@ -1163,16 +1171,18 @@ body.no-crt .crt {
     height: auto;
     min-height: 100dvh;
     overflow: auto;
+    padding-top: 0;
   }
 
+  /* The sticky HUD carries the top safe area itself, so once the page scrolls it still covers
+     the status bar of a home-screen app instead of sliding underneath it. */
   .hud {
     position: sticky;
     top: 0;
-    z-index: 20;
     background: var(--bg);
     flex-wrap: wrap;
     gap: 6px 10px;
-    padding: 6px 8px;
+    padding: calc(6px + env(safe-area-inset-top)) 8px 6px;
   }
 
   .brand .sub {
@@ -1197,6 +1207,32 @@ body.no-crt .crt {
   .scope-panel {
     height: min(calc(100vw + 56px), 74dvh);
     min-height: 320px;
+  }
+
+  body.sector-fit .scope-panel {
+    height: var(--scope-fit);
+    min-height: 0;
+  }
+
+  /* Lighter scanlines and vignette on small screens, where every pixel of text counts. */
+  .crt {
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.12) 2px 3px),
+      radial-gradient(ellipse at center, transparent 65%, rgba(0, 0, 0, 0.32) 100%);
+  }
+
+  /* Toasts sit over the scope: keep them compact, two at a time. */
+  .toasts {
+    gap: 4px;
+  }
+
+  .toast {
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+
+  .toast:nth-child(n + 3) {
+    display: none;
   }
 
   .sky-panel {
@@ -1295,9 +1331,18 @@ body.no-crt .crt {
     min-height: 0;
   }
 
-  .scope-panel {
+  .scope-panel,
+  body.sector-fit .scope-panel {
     height: auto;
     min-height: 0;
+  }
+
+  body.sector-fit .layout {
+    grid-template-rows: 150px minmax(0, 1fr);
+  }
+
+  .sky-panel {
+    height: auto;
   }
 
   .side {
@@ -1341,8 +1386,18 @@ body.no-crt .crt {
   }
 }
 
+@media (hover: none) {
+  .cursor:empty {
+    display: none;
+  }
+}
+
 @media (max-width: 480px) {
   .clock .zulu {
+    display: none;
+  }
+
+  .flow .long {
     display: none;
   }
 

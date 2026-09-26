@@ -6,9 +6,10 @@
  *          all the pixels go to what's in front of the balcony.
  *
  * Layers: a cached "static" canvas (coastline, runways, rings, bearings), then per frame
- * the phosphor blips left by the sweep, the sweep beam, and the live symbols and data
- * blocks. Contacts are drawn at their smoothed, dead-reckoned positions every frame; the
- * sweep leaves fading "paints" where it crossed them, like a real phosphor screen.
+ * the sea clutter left by the sweep, the sweep beam, and the live symbols and data blocks.
+ * Contacts are drawn at their smoothed, dead-reckoned positions every frame. Like a
+ * phosphor screen, the sweep lights each contact up as it passes and it fades until the
+ * next pass.
  */
 import type { Settings } from '../app/settings.ts';
 import { lookupType } from '../data/static/aircraftTypes.ts';
@@ -31,14 +32,25 @@ export interface ScopeInput {
   heading: number;
   /** Changi runway ends currently in use, e.g. ["02L", "02C"]: their centrelines are highlighted. */
   activeRunways: string[];
+  /** Room the HTML controls take in the corners of the scope, which the sector display keeps clear of. */
+  corners?: Corners;
 }
+
+/** [width, height] of the controls in each corner of the canvas, measured from that corner (CSS px). */
+export interface Corners {
+  tl: [number, number];
+  tr: [number, number];
+  bl: [number, number];
+  br: [number, number];
+}
+
+const NO_CORNERS: Corners = { tl: [0, 0], tr: [0, 0], bl: [0, 0], br: [0, 0] };
 
 interface Paint {
   x: number;
   y: number;
   t: number;
   strength: number;
-  color: string;
 }
 
 interface RingCache {
@@ -48,6 +60,18 @@ interface RingCache {
   minY: number;
   maxX: number;
   maxY: number;
+}
+
+/** A contact on screen this frame. */
+interface Item {
+  t: Track;
+  x: number;
+  y: number;
+  /** Position in local km. */
+  px: number;
+  py: number;
+  /** Screen position of the end of its leader line, if it has one. */
+  lead?: [number, number];
 }
 
 interface LabelBox {
@@ -79,6 +103,82 @@ function ringStep(range: number): number {
   return 25;
 }
 
+/**
+ * Did the sweep pass screen angle `a` (degrees clockwise from up, any range) between two
+ * frames? A full circle turns clockwise through 0..360; a sector swings between ±half.
+ */
+export function sweptPast(prev: number, cur: number, dir: 1 | -1, a: number, fullCircle: boolean): boolean {
+  if (fullCircle) {
+    const swept = (cur - prev + 360) % 360;
+    const d = (((a - prev) % 360) + 360) % 360;
+    return swept < 180 && d > 0 && d <= swept;
+  }
+  return dir === 1 ? a > prev && a <= cur : a < prev && a >= cur;
+}
+
+/** Bearing labels are centred this far outside the rim; their text reaches about 7 px further. */
+const LABEL_OUT = 18;
+
+/**
+ * Sector (fan) geometry for a canvas `w` px wide: the fan's half-angle, the largest radius
+ * the width allows, and the room a fan of radius R needs above and below its apex so that
+ * the bearing labels and the fan itself stay clear of the controls in the corners.
+ */
+export function sectorGeometry(w: number, fov: number, corners: Corners = NO_CORNERS) {
+  const half = clamp(fov / 2 + 12, 40, 90);
+  const sin = Math.sin(half * DEG);
+  const cos = half >= 89.9 ? 0 : Math.cos(half * DEG);
+  const cx = w / 2;
+  const gap = 4;
+  const maxR = Math.max(40, (cx - 28) / (half >= 89.9 ? 1 : sin));
+  const above = (R: number): number => {
+    const ring = R + LABEL_OUT + 7;
+    let need = ring + 2;
+    for (const [bw, bh] of [corners.tl, corners.tr]) {
+      if (bw <= 0 || bh <= 0) continue;
+      // The label ring is highest over the box where it meets the box's inner edge
+      // (less half a label's width), if it reaches that far round.
+      const d = Math.max(0, cx - bw - gap - 10);
+      if (d >= ring * Math.sin(Math.min(half + 3, 90) * DEG)) continue;
+      need = Math.max(need, bh + gap + Math.sqrt(ring * ring - d * d));
+    }
+    return need;
+  };
+  const below = (R: number): number => {
+    let need = 12;
+    for (const [bw, bh] of [corners.bl, corners.br]) {
+      if (bw <= 0 || bh <= 0) continue;
+      const d = cx - bw - gap;
+      // Lowest point of the display over the box (+ below the apex, − above it): the observer
+      // mark, else the fan's lower edge at the box's inner edge, and the labels at the fan's ends.
+      let low = d < 10 ? 10 : (-d * cos) / sin;
+      if ((R + LABEL_OUT) * sin + 12 >= d) low = Math.max(low, 7 - (R + LABEL_OUT) * cos);
+      need = Math.max(need, low + gap + bh);
+    }
+    return need;
+  };
+  return { half, maxR, above, below, height: (R: number) => above(R) + below(R) };
+}
+
+/** Brightness a contact fades to between sweeps: symbol and leader line, and data block. */
+const BODY_FLOOR = 0.45;
+const TEXT_FLOOR = 0.8;
+
+const rgbCache = new Map<string, [number, number, number]>();
+
+/** A "#rrggbb" colour blended towards white by f (0..1). */
+function whiten(color: string, f: number): string {
+  let c = rgbCache.get(color);
+  if (!c) {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
+    const n = parseInt(color.slice(1), 16);
+    c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    rgbCache.set(color, c);
+  }
+  const m = (v: number) => Math.round(v + (255 - v) * f);
+  return `rgb(${m(c[0])},${m(c[1])},${m(c[2])})`;
+}
+
 export class Scope {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly layer = document.createElement('canvas');
@@ -95,10 +195,15 @@ export class Scope {
   private rot = 0;
   private kmPx = 1;
   private mode: Settings['mode'] = 'ppi';
+  /** Phone-sized display: slightly larger text and symbols. */
+  private small = false;
+  private corners = NO_CORNERS;
   private frameKey = '';
   private land: RingCache[] = [];
   private park: RingCache[] = [];
   private paints: Paint[] = [];
+  /** When the sweep last passed each contact, by hex. */
+  private readonly litAt = new Map<string, number>();
   private prevSweep: number | undefined;
   private hits: { t: Track; x: number; y: number }[] = [];
   private labels = new Map<string, LabelBox>();
@@ -133,6 +238,10 @@ export class Scope {
   private layout(s: ScopeInput): void {
     const st = s.settings;
     this.mode = st.mode;
+    const small = this.w < 560;
+    if (small !== this.small) this.textWidths.clear();
+    this.small = small;
+    this.corners = s.corners ?? NO_CORNERS;
     this.rot = st.mode === 'sector' || st.orientation === 'facing' ? s.heading : 0;
     if (st.mode === 'ppi') {
       this.half = 180;
@@ -140,18 +249,45 @@ export class Scope {
       this.cy = this.h / 2;
       this.R = Math.max(40, Math.min(this.w, this.h) / 2 - 30);
     } else {
-      this.half = clamp(st.observer.fov / 2 + 12, 40, 90);
-      const mx = 28;
-      const mt = 30;
-      const mb = 18;
-      const availW = this.w - 2 * mx;
-      const availH = this.h - mt - mb;
-      const byW = this.half >= 89.9 ? availW / 2 : availW / (2 * Math.sin(this.half * DEG));
-      this.R = Math.max(40, Math.min(availH, byW));
+      const geo = sectorGeometry(this.w, st.observer.fov, this.corners);
+      let R = geo.maxR;
+      if (geo.height(R) > this.h) {
+        // Not tall enough for the width: the largest fan that fits the height.
+        let lo = 40;
+        let hi = R;
+        for (let i = 0; i < 20; i++) {
+          const mid = (lo + hi) / 2;
+          if (geo.height(mid) <= this.h) lo = mid;
+          else hi = mid;
+        }
+        R = lo;
+      }
+      this.half = geo.half;
+      this.R = R;
       this.cx = this.w / 2;
-      this.cy = mt + (availH + this.R) / 2;
+      this.cy = geo.above(R) + Math.max(0, this.h - geo.height(R)) / 2;
     }
     this.kmPx = this.R / st.rangeKm;
+  }
+
+  /**
+   * The canvas height a sector display wants at the canvas's current width: just the fan,
+   * its labels and the corner controls, with no blank space. Undefined in PPI mode.
+   */
+  fitHeight(settings: Settings, corners?: Corners): number | undefined {
+    if (settings.mode !== 'sector') return undefined;
+    const geo = sectorGeometry(this.canvas.clientWidth, settings.observer.fov, corners);
+    return Math.ceil(geo.height(geo.maxR));
+  }
+
+  /** Font size for canvas text: a size up on phones. */
+  private fs(px: number): number {
+    return this.small ? px + 1 : px;
+  }
+
+  /** Line spacing of the data blocks. */
+  private get lineH(): number {
+    return this.small ? 13 : 12;
   }
 
   /** Local km (east, north) → CSS pixels. */
@@ -253,6 +389,7 @@ export class Scope {
     const key = [
       this.w, this.h, this.dpr, st.mode, Math.round(this.rot * 4) / 4, st.rangeKm, st.theme, st.units,
       st.observer.facing, st.observer.fov, s.activeRunways.join(','), this.frameKey,
+      this.cx.toFixed(1), this.cy.toFixed(1), this.R.toFixed(1),
     ].join('|');
     if (key === this.layerKey) return;
     this.layerKey = key;
@@ -359,7 +496,7 @@ export class Scope {
     ctx.setLineDash([]);
     const mid = (a0 + a1) / 2;
     ctx.fillStyle = p.fovEdge;
-    ctx.font = `9px ${FONT}`;
+    ctx.font = `${this.fs(9)}px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('YOUR VIEW', this.cx + Math.cos(mid) * this.R * 0.93, this.cy + Math.sin(mid) * this.R * 0.93);
@@ -396,7 +533,7 @@ export class Scope {
       if (active) {
         const [lx, ly] = this.project(...s.frame.toXY(line.ticks[4]!.at.lat, line.ticks[4]!.at.lon));
         ctx.fillStyle = p.centerlineActive;
-        ctx.font = `9px ${FONT}`;
+        ctx.font = `${this.fs(9)}px ${FONT}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(end.id, lx + 6, ly);
@@ -423,7 +560,7 @@ export class Scope {
     const step = ringStep(range);
     ctx.strokeStyle = p.ring;
     ctx.lineWidth = 1;
-    ctx.font = `9.5px ${FONT}`;
+    ctx.font = `${this.fs(9.5)}px ${FONT}`;
     ctx.fillStyle = p.ringText;
     ctx.textBaseline = 'middle';
     // Labels sit along a line off to one side, just inside each ring, so they never hide the forward view.
@@ -448,7 +585,7 @@ export class Scope {
   private drawLandmarks(ctx: CanvasRenderingContext2D, s: ScopeInput): void {
     const p = s.palette;
     const range = s.settings.rangeKm;
-    ctx.font = `9px ${FONT}`;
+    ctx.font = `${this.fs(9)}px ${FONT}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     for (const lm of LANDMARKS) {
@@ -496,7 +633,7 @@ export class Scope {
       ctx.stroke();
       if (b % 30 === 0) {
         const cardinal = ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[b];
-        ctx.font = cardinal ? `bold 12px ${FONT}` : `9.5px ${FONT}`;
+        ctx.font = cardinal ? `bold ${this.fs(12)}px ${FONT}` : `${this.fs(9.5)}px ${FONT}`;
         ctx.fillText(cardinal ?? pad3(b), this.cx + sin * (this.R + 18), this.cy - cos * (this.R + 18));
       }
     }
@@ -524,15 +661,6 @@ export class Scope {
     const phase = (now % (2 * periodMs)) / periodMs;
     const k = phase < 1 ? phase : 2 - phase;
     return { a: -this.half + 2 * this.half * k, dir: phase < 1 ? 1 : -1 };
-  }
-
-  private crossed(prev: number, cur: number, dir: 1 | -1, a: number): boolean {
-    if (this.half >= 180) {
-      const swept = (cur - prev + 360) % 360;
-      const d = (a - prev + 360) % 360;
-      return swept < 180 && d <= swept;
-    }
-    return dir === 1 ? a > prev && a <= cur : a < prev && a >= cur;
   }
 
   private drawBeam(ctx: CanvasRenderingContext2D, a: number, dir: 1 | -1, p: Palette): void {
@@ -581,12 +709,13 @@ export class Scope {
     ctx.restore();
   }
 
-  private drawPaints(ctx: CanvasRenderingContext2D, now: number, periodMs: number): void {
+  private drawPaints(ctx: CanvasRenderingContext2D, now: number, periodMs: number, p: Palette): void {
     const tau = periodMs * 0.5;
     this.paints = this.paints.filter((pt) => now - pt.t < periodMs * 2.2);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgb(${p.rgb})`;
     for (const pt of this.paints) {
       const alpha = Math.exp(-(now - pt.t) / tau) * pt.strength;
       if (alpha < 0.02) continue;
@@ -595,7 +724,6 @@ export class Scope {
       // A radar return is smeared along the arc by the beam width.
       const half = Math.max(1.3 * DEG, 3.5 / Math.max(r, 1));
       const base = ang * DEG - Math.PI / 2;
-      ctx.strokeStyle = pt.color;
       ctx.globalAlpha = Math.min(1, alpha);
       ctx.lineWidth = 2.2 + pt.strength * 2;
       ctx.beginPath();
@@ -613,20 +741,42 @@ export class Scope {
     return p.kinds[t.cls.kind];
   }
 
-  private drawSymbol(ctx: CanvasRenderingContext2D, t: Track, x: number, y: number, color: string): void {
-    const k = 5.5;
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.5;
+  /**
+   * How lit a contact is, 0..1: `flash` flares as the sweep passes and dies within a fraction
+   * of a second; `glow` is the afterglow, which fades over most of a revolution so that the
+   * next pass stands out.
+   */
+  private lit(t: Track, now: number, periodMs: number): { flash: number; glow: number } {
+    const at = this.litAt.get(t.hex);
+    if (at === undefined) return { flash: 0, glow: 0 };
+    const dt = Math.max(0, now - at);
+    return { flash: Math.exp(-dt / Math.min(450, periodMs * 0.1)), glow: Math.exp(-dt / (periodMs * 0.45)) };
+  }
+
+  /** The contact's symbol. When the sweep has just lit it, it flares: whiter, bolder, filled and glowing. */
+  private drawSymbol(ctx: CanvasRenderingContext2D, t: Track, x: number, y: number, color: string, flash = 0): void {
+    const lit = flash > 0.02;
+    const k = (this.small ? 6.2 : 5.5) * (1 + 0.15 * flash);
+    ctx.strokeStyle = lit ? whiten(color, 0.55 * flash) : color;
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = (this.small ? 1.7 : 1.5) + 0.7 * flash;
+    if (lit) {
+      // Heavier aircraft make a bigger return.
+      const wake = lookupType(t.a.type)?.wake;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = (wake === 'J' ? 16 : wake === 'H' ? 13 : wake === 'L' ? 7 : 10) * flash * this.dpr;
+    }
     ctx.beginPath();
     if (t.cls.kind === 'GND') {
       ctx.arc(x, y, 2, 0, TAU);
       ctx.fill();
+      ctx.shadowBlur = 0;
       return;
     }
     if (t.cls.emergency) {
       ctx.rect(x - k, y - k, 2 * k, 2 * k);
       ctx.fill();
+      ctx.shadowBlur = 0;
       return;
     }
     if (t.cls.heli) {
@@ -656,7 +806,14 @@ export class Scope {
     } else {
       ctx.arc(x, y, k * 0.85, 0, TAU);
     }
+    if (lit) {
+      const a = ctx.globalAlpha;
+      ctx.globalAlpha = a * 0.5 * flash;
+      ctx.fill();
+      ctx.globalAlpha = a;
+    }
     ctx.stroke();
+    ctx.shadowBlur = 0;
   }
 
   private textWidth(ctx: CanvasRenderingContext2D, s: string): number {
@@ -694,12 +851,19 @@ export class Scope {
     const placed: { x: number; y: number; w: number; h: number }[] = [];
     const next = new Map<string, LabelBox>();
     const symbols = items.map((i) => ({ x: i.x - 7, y: i.y - 7, w: 14, h: 14 }));
+    const { tl, tr, bl, br } = this.corners;
+    const controls = [
+      { x: 0, y: 0, w: tl[0], h: tl[1] },
+      { x: this.w - tr[0], y: 0, w: tr[0], h: tr[1] },
+      { x: 0, y: this.h - bl[1], w: bl[0], h: bl[1] },
+      { x: this.w - br[0], y: this.h - br[1], w: br[0], h: br[1] },
+    ];
     const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
       Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
       Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
     for (const it of items) {
       const w = Math.max(...it.lines.map((l) => this.textWidth(ctx, l))) + 6;
-      const h = it.lines.length * 12 + 3;
+      const h = it.lines.length * this.lineH + 3;
       const prev = this.labels.get(it.t.hex);
       let best: LabelBox | undefined;
       let bestScore = Infinity;
@@ -709,6 +873,7 @@ export class Scope {
         let score = i * 2 + (prev && prev.slot === i ? -25 : 0);
         for (const b of placed) score += overlap(box, b) * 4;
         for (const b of symbols) score += overlap(box, b) * 2;
+        for (const b of controls) score += overlap(box, b) * 8;
         if (box.x < 2 || box.y < 2 || box.x + w > this.w - 2 || box.y + h > this.h - 2) score += 5000;
         if (score < bestScore) {
           bestScore = score;
@@ -743,21 +908,29 @@ export class Scope {
     const sweep = this.sweepAt(now, periodMs);
     const prev = this.prevSweep;
     this.prevSweep = sweep.a;
-    const items: { t: Track; x: number; y: number; px: number; py: number; ang: number }[] = [];
+    const items: Item[] = [];
     for (const t of s.tracks) {
       const d = t.display(now);
       const [x, y] = this.project(d.x, d.y);
       if (!this.inside(x, y, 2)) continue;
-      items.push({ t, x, y, px: d.x, py: d.y, ang: this.polar(x, y)[0] });
+      let lead: [number, number] | undefined;
+      if (st.leaderS > 0 && !t.a.gnd && t.a.gs) {
+        const f = t.future(now, st.leaderS);
+        lead = this.project(f.x, f.y);
+      }
+      items.push({ t, x, y, px: d.x, py: d.y, lead });
     }
 
-    // The sweep leaves a glowing return where it crosses each contact (plus a little sea clutter).
+    // The sweep lights up each contact as it reaches it (its symbol, or the end of its leader
+    // line if that comes first), and leaves a little sea clutter.
     if (prev !== undefined) {
+      const full = this.half >= 180;
       for (const it of items) {
-        if (!this.crossed(prev, sweep.a, sweep.dir, it.ang)) continue;
-        const wake = lookupType(it.t.a.type)?.wake;
-        const strength = wake === 'J' ? 1.25 : wake === 'H' ? 1.05 : wake === 'L' ? 0.6 : 0.85;
-        this.paints.push({ x: it.px, y: it.py, t: now, strength, color: this.colorOf(it.t, p, now) });
+        const hit =
+          sweptPast(prev, sweep.a, sweep.dir, this.polar(it.x, it.y)[0], full) ||
+          (it.lead !== undefined && sweptPast(prev, sweep.a, sweep.dir, this.polar(...it.lead)[0], full));
+        const last = this.litAt.get(it.t.hex);
+        if (hit && (last === undefined || now - last > periodMs * 0.3)) this.litAt.set(it.t.hex, now);
       }
       if (st.crt) {
         const swept = this.half >= 180 ? (sweep.a - prev + 360) % 360 : Math.abs(sweep.a - prev);
@@ -765,37 +938,47 @@ export class Scope {
         for (let i = 0; i < n; i++) {
           const r = (this.R * (0.05 + Math.random() ** 2 * 0.5)) / this.kmPx;
           const a = (this.rot + sweep.a - sweep.dir * Math.random() * swept) * DEG;
-          this.paints.push({ x: Math.sin(a) * r, y: Math.cos(a) * r, t: now, strength: 0.18 + Math.random() * 0.2, color: `rgb(${p.rgb})` });
+          this.paints.push({ x: Math.sin(a) * r, y: Math.cos(a) * r, t: now, strength: 0.18 + Math.random() * 0.2 });
         }
       }
+    }
+    if (this.litAt.size > 400) {
+      for (const [hex, at] of this.litAt) if (now - at > periodMs * 4) this.litAt.delete(hex);
     }
 
     ctx.save();
     this.shape(ctx);
     ctx.clip();
-    this.drawPaints(ctx, now, periodMs);
+    this.drawPaints(ctx, now, periodMs, p);
     this.drawBeam(ctx, sweep.a, sweep.dir, p);
     ctx.restore();
 
     this.drawContacts(ctx, s, items);
   }
 
-  private drawContacts(
-    ctx: CanvasRenderingContext2D,
-    s: ScopeInput,
-    items: { t: Track; x: number; y: number; px: number; py: number }[],
-  ): void {
+  private drawContacts(ctx: CanvasRenderingContext2D, s: ScopeInput, items: Item[]): void {
     const { now, palette: p, settings: st } = s;
-    ctx.font = `11px ${FONT}`;
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
+    const sel = s.selected;
     this.hits = items.map((i) => ({ t: i.t, x: i.x, y: i.y }));
 
+    // How brightly each contact shows: it flares as the sweep passes, then fades until the
+    // next pass. The locked target and emergencies stay bright; stale contacts stay dim.
+    const shown = items.map((it) => {
+      const { flash, glow } = this.lit(it.t, now, st.sweepS * 1000);
+      const keep = it.t.cls.emergency ? 1 : it.t === sel ? 0.85 : 0;
+      const stale = it.t.isStale(now) ? 0.45 : 1;
+      return {
+        ...it,
+        color: this.colorOf(it.t, p, now),
+        flash: flash * stale,
+        body: stale * Math.max(keep, BODY_FLOOR + (1 - BODY_FLOOR) * glow),
+        text: stale * Math.max(keep, TEXT_FLOOR + (1 - TEXT_FLOOR) * glow),
+      };
+    });
+
     // Trails and leader lines first, so symbols and text sit on top.
-    for (const { t, x, y } of items) {
-      const color = this.colorOf(t, p, now);
-      const stale = t.isStale(now);
-      ctx.globalAlpha = stale ? 0.4 : 1;
+    for (const c of shown) {
+      const { t, x, y, color } = c;
       if (st.trailMin > 0 && t.history.length > 1) {
         const since = now - st.trailMin * 60_000;
         let lastT = Infinity;
@@ -807,37 +990,48 @@ export class Scope {
           lastT = h.t;
           const [hx, hy] = this.project(h.x, h.y);
           const age = (now - h.t) / (st.trailMin * 60_000);
-          ctx.globalAlpha = (stale ? 0.3 : 0.75) * (1 - age * 0.8);
+          ctx.globalAlpha = c.body * 0.75 * (1 - age * 0.8);
           ctx.fillRect(hx - 1, hy - 1, 2, 2);
         }
-        ctx.globalAlpha = stale ? 0.4 : 1;
       }
-      if (st.leaderS > 0 && !t.a.gnd && t.a.gs) {
-        const f = t.future(now, st.leaderS);
-        const [fx, fy] = this.project(f.x, f.y);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
+      // The leader line, where it will be in a minute, flares with the symbol.
+      if (c.lead) {
+        const [fx, fy] = c.lead;
+        const lit = c.flash > 0.02;
+        ctx.globalAlpha = c.body;
+        ctx.strokeStyle = lit ? whiten(color, 0.5 * c.flash) : color;
+        ctx.lineWidth = (this.small ? 1.2 : 1) + 0.9 * c.flash;
+        if (lit) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 8 * c.flash * this.dpr;
+        }
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(fx, fy);
         ctx.stroke();
+        ctx.shadowBlur = 0;
       }
     }
     ctx.globalAlpha = 1;
 
-    const sel = s.selected;
     if (sel) this.drawSelection(ctx, s, sel, items.find((i) => i.t === sel));
 
-    for (const { t, x, y } of items) {
-      ctx.globalAlpha = t.isStale(now) ? 0.45 : 1;
-      this.drawSymbol(ctx, t, x, y, this.colorOf(t, p, now));
+    for (const c of shown) {
+      ctx.globalAlpha = c.body;
+      this.drawSymbol(ctx, c.t, c.x, c.y, c.color, c.flash);
     }
     ctx.globalAlpha = 1;
 
-    // Data blocks: fewer lines when the picture gets busy.
+    // Data blocks: fewer lines when the picture gets busy for the size of the display.
     if (st.labels === 'off') return;
-    const busy = items.length > 45 ? 'min' : items.length > 25 || st.labels === 'compact' ? 'compact' : 'full';
-    const byImportance = [...items].sort((a, b) => {
+    ctx.font = `${this.fs(11)}px ${FONT}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    const room = (this.half >= 180 ? Math.PI : this.half * DEG) * this.R * this.R;
+    const n = items.length;
+    const busy =
+      n > Math.min(45, room / 3300) ? 'min' : n > Math.min(25, room / 6500) || st.labels === 'compact' ? 'compact' : 'full';
+    const byImportance = [...shown].sort((a, b) => {
       if (a.t === sel) return -1;
       if (b.t === sel) return 1;
       return (a.t.sight?.groundKm ?? 0) - (b.t.sight?.groundKm ?? 0);
@@ -850,33 +1044,39 @@ export class Scope {
       this.lastLabelLayout = now;
       this.layoutLabels(ctx, withLines);
     }
+    const lh = this.lineH;
     for (const it of withLines) {
       const box = this.labels.get(it.t.hex);
       if (!box) continue;
-      const color = it.t === sel ? p.selected : this.colorOf(it.t, p, now);
+      const color = it.t === sel ? p.selected : it.color;
       const bx = it.x + box.x;
       const by = it.y + box.y;
-      ctx.globalAlpha = it.t.isStale(now) ? 0.45 : 1;
+      ctx.globalAlpha = it.text;
       // Leader from the symbol to the nearest corner of the block.
       const cx = clamp(it.x, bx, bx + box.w);
       const cy = clamp(it.y, by, by + box.h);
-      if (Math.hypot(cx - it.x, cy - it.y) > 8) {
+      const d = Math.hypot(cx - it.x, cy - it.y);
+      if (d > 8) {
         ctx.strokeStyle = color;
         ctx.lineWidth = 0.7;
         ctx.beginPath();
-        ctx.moveTo(it.x + ((cx - it.x) / Math.hypot(cx - it.x, cy - it.y)) * 7, it.y + ((cy - it.y) / Math.hypot(cx - it.x, cy - it.y)) * 7);
+        ctx.moveTo(it.x + ((cx - it.x) / d) * 7, it.y + ((cy - it.y) / d) * 7);
         ctx.lineTo(cx, cy);
         ctx.stroke();
       }
       // A dark halo keeps data blocks legible over coastlines and the sweep.
-      ctx.fillStyle = color;
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = this.small ? 3.5 : 3;
       ctx.lineJoin = 'round';
-      it.lines.forEach((line, i) => {
-        ctx.strokeText(line, bx + 3, by + 2 + i * 12);
-        ctx.fillText(line, bx + 3, by + 2 + i * 12);
-      });
+      it.lines.forEach((line, i) => ctx.strokeText(line, bx + 3, by + 2 + i * lh));
+      const lit = it.flash > 0.05;
+      ctx.fillStyle = lit ? whiten(color, 0.45 * it.flash) : color;
+      if (lit) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 6 * it.flash * this.dpr;
+      }
+      it.lines.forEach((line, i) => ctx.fillText(line, bx + 3, by + 2 + i * lh));
+      ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
 

@@ -9,7 +9,7 @@ import { Poller, ReadsbUrlSource, RelaySource, SimSource, type FeedSource, type 
 import { legProgress, Enricher, simRoute } from '../enrich/lookup.ts';
 import { daylight, moonPosition, sunPosition, type MoonInfo, type SkyBody } from '../geo/astro.ts';
 import { compassPoint, DEG, KM_PER_NM, LocalFrame, normDeg } from '../geo/geo.ts';
-import { Scope } from '../render/scope.ts';
+import { Scope, type Corners } from '../render/scope.ts';
 import { SkyView } from '../render/sky.ts';
 import { applyThemeToCss, PALETTES, type Palette } from '../render/theme.ts';
 import { classify, emergencyText, FlowMonitor } from '../track/classify.ts';
@@ -87,6 +87,11 @@ export class App {
   private stationWaitSince = 0;
   private pictureBuilt = false;
   private lastViewToast = 0;
+  /** Room the controls take in the scope's corners, which the sector display keeps clear of. */
+  private corners: Corners | undefined;
+  private scopeFit = '';
+  private fitFrame: number | undefined;
+  private flowHtml: string | undefined;
 
   constructor() {
     const s = this.settings.get();
@@ -141,6 +146,9 @@ export class App {
     this.settings.subscribe((next, prev) => this.onSettings(next, prev));
     this.bindControls();
     this.syncHud();
+    this.scheduleFit();
+    addEventListener('resize', () => this.scheduleFit());
+    void document.fonts.ready.then(() => this.scheduleFit());
     this.log.add(`REDCOAST v${__APP_VERSION__} ONLINE`, 'system');
     this.log.add(
       `POST ${s.configured ? s.observer.name.toUpperCase() : 'DEFAULT (EAST COAST PARK)'} · FACING ${pad3(s.observer.facing)} ${compassPoint(s.observer.facing)}`,
@@ -397,6 +405,7 @@ export class App {
         frame: this.frame,
         heading,
         activeRunways: this.activeRunways,
+        corners: this.corners,
       });
       this.sky.render({
         now,
@@ -456,13 +465,54 @@ export class App {
     flowEl.title = fl.dir
       ? `Changi is using runway direction ${fl.dir}. Landing: ${fl.arr.join(', ') || '—'}. Taking off: ${fl.dep.join(', ') || '—'}.`
       : 'Changi runway direction appears once arrivals or departures are seen lined up.';
-    flowEl.textContent = this.flowDir
-      ? `CHANGI RWY ${this.activeRunways.join(' ') || this.flowDir}`
+    // On phones "CHANGI" is dropped, so the readout stays clear of the sector's bearing labels.
+    const flow = this.flowDir
+      ? `<span class="long">CHANGI </span>RWY ${this.activeRunways.join(' ') || this.flowDir}`
       : this.link.state === 'sim'
         ? ''
         : 'CHANGI FLOW —';
+    if (flow !== this.flowHtml) {
+      this.flowHtml = flow;
+      flowEl.innerHTML = flow;
+      // It sits in a corner of the scope.
+      this.scheduleFit();
+    }
     this.settingsDlg.refreshStatus();
     this.syncLinkOverlay(now);
+  }
+
+  /** Refits the scope on the next frame, once however many changes ask for it. */
+  private scheduleFit(): void {
+    this.fitFrame ??= requestAnimationFrame(() => {
+      this.fitFrame = undefined;
+      this.fitScope();
+    });
+  }
+
+  /**
+   * Measures the controls in the scope's corners and, in sector mode, shrinks the scope to
+   * the fan (body.sector-fit in styles.css) so there's no blank space above and below it.
+   */
+  private fitScope(): void {
+    const canvas = this.scope.canvas.getBoundingClientRect();
+    const size = (sel: string, right: boolean, bottom: boolean): [number, number] => {
+      const r = $(`.scope-panel ${sel}`).getBoundingClientRect();
+      if (!r.width || !r.height) return [0, 0];
+      return [right ? canvas.right - r.left : r.right - canvas.left, bottom ? canvas.bottom - r.top : r.bottom - canvas.top];
+    };
+    this.corners = {
+      tl: size('.ovl.tl', false, false),
+      tr: size('.ovl.tr', true, false),
+      bl: size('.ovl.bl', false, true),
+      br: size('.ovl.br', true, true),
+    };
+    const h = this.scope.fitHeight(this.settings.get(), this.corners);
+    // The panel is the canvas plus its 1 px border.
+    const fit = h === undefined ? '' : `${h + 2}px`;
+    if (fit === this.scopeFit) return;
+    this.scopeFit = fit;
+    document.body.classList.toggle('sector-fit', h !== undefined);
+    document.body.style.setProperty('--scope-fit', fit || null);
   }
 
   private syncLinkOverlay(now: number): void {
@@ -514,7 +564,9 @@ export class App {
     $('[data-act="mode"]').textContent = s.mode === 'ppi' ? 'PPI 360°' : 'SECTOR';
     const orient = $<HTMLButtonElement>('[data-act="orient"]');
     orient.textContent = s.orientation === 'north' ? 'NORTH UP' : 'VIEW UP';
+    // A sector always looks the way you face.
     orient.disabled = s.mode === 'sector';
+    orient.hidden = s.mode === 'sector';
     $('[data-act="sound"]').setAttribute('aria-pressed', String(s.sound));
     $('[data-act="sound"]').textContent = s.sound ? 'SND ON' : 'SND OFF';
     $('.sky-facing').textContent = `FACING ${compassPoint(s.observer.facing)} ${pad3(s.observer.facing)}° · VIEW ${Math.round(s.observer.fov)}°`;
@@ -550,6 +602,7 @@ export class App {
     this.analyze();
     this.syncHud();
     this.refreshPanels();
+    this.scheduleFit();
   }
 
   // ------------------------------------------------------------ input
