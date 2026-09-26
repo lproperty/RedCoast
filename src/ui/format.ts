@@ -80,8 +80,8 @@ export function trendArrow(fpm: number | undefined): string {
   return fpm > 0 ? '↑' : '↓';
 }
 
-/** A real IATA flight number: two-character airline designator plus 1–4 digits ("SQ321", "3K512"). */
-const IATA_FLIGHT = /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/;
+/** A real IATA flight number: airline designator (two letters, or a letter and a digit) plus 1–4 digits ("SQ321", "3K512"). */
+const IATA_FLIGHT = /^(?:[A-Z]{2}|[A-Z]\d|\d[A-Z])\d{1,4}[A-Z]?$/;
 
 /** The name people know a flight by: IATA flight number if known, else the callsign, registration or hex. */
 export function displayName(t: Track): string {
