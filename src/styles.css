@@ -1359,3 +1359,31 @@ body.no-crt .crt {
     transition: none !important;
   }
 }
+
+/* ------------------------------------------------------------ legend (settings) */
+
+.legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px 12px;
+}
+
+.legend-list .sym {
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.legend-block {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  color: var(--text);
+}

@@ -193,6 +193,24 @@ export class SettingsDialog {
           <p class="dim small">The setup link opens RedCoast pre-set to your post on another device. It contains your
             coordinates, so only share it with people you'd tell where you live.</p>
         </section>
+        <section class="legend"><h3>READING THE SCOPE</h3>
+          <ul class="legend-list">
+            <li><span class="sym" style="color:var(--arr)">▽</span> arriving</li>
+            <li><span class="sym" style="color:var(--dep)">△</span> departing</li>
+            <li><span class="sym" style="color:var(--ovf)">□</span> overflight</li>
+            <li><span class="sym">○</span> local / unknown</li>
+            <li><span class="sym" style="color:var(--mil)">◇</span> military</li>
+            <li><span class="sym">⊕</span> helicopter</li>
+            <li><span class="sym" style="color:var(--emerg)">■</span> emergency</li>
+            <li><span class="sym">★</span> special aircraft</li>
+          </ul>
+          <pre class="legend-block">SQ321 ★      flight number
+045↓ 180      altitude in hundreds of ft (4,500 ft), ↑↓ climbing/descending, speed in knots
+B77W LHR      aircraft type, and where it came from (arrivals) or is going (departures)</pre>
+          <p class="dim small">The line ahead of each contact shows where it will be in a minute; the dots behind show
+            where it has been. On the locked target, the dashed line and ring from you give its bearing and range.
+            The sweep leaves glowing returns like a real phosphor screen.</p>
+        </section>
         <section class="grid"><h3>DISPLAY</h3>
           <label>Scope <select name="mode"><option value="ppi">PPI · 360° round scope</option><option value="sector">Sector · forward fan</option></select></label>
           <label>Orientation <select name="orientation"><option value="facing">Your view at the top</option><option value="north">North at the top</option></select></label>
