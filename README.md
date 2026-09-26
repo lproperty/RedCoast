@@ -23,7 +23,11 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
 - **"Where do I look?"** Lock a target and RedCoast tells you in plain words ("2½ fists left · 1 fist up").
   It also shows how far away it is, when it will pass closest, how late its sound will reach you, and how
   big it looks next to the full Moon.
-- **Fun details.** Airline and radio callsign, origin → destination with flight progress, aircraft type,
+- **Knows the haze.** Changi's weather report (METAR) sets how far you can see today. A plane lost in the
+  haze, or flying above a cloud deck, doesn't count as in view, and "coming into view" and the alerts
+  follow suit. Set it by hand in *Settings → How far you can see* if your balcony disagrees.
+- **Fun details.** Airline and radio callsign, origin → destination with flight progress and estimated
+  take-off and landing times, aircraft type,
   registration and photo. You get the autopilot's selected altitude, outside air temperature and wind at
   the aircraft, plus a fact about each type (the A380 is a Singapore Airlines story).
 - **It knows Changi.** It classifies arrivals, departures and overflights, spots aircraft lined up on each
@@ -79,7 +83,7 @@ been. On the locked target, the dashed line and ring from your position are its 
   phone / browser             Cloudflare Worker             home station
   (GitHub Pages)              (relay/)                      (station/, always-on computer at home)
 
-  scope · sky · panels ─poll─► latest picture ◄───push───── adsb.lol / adsb.fi + OpenSky,
+  scope · sky · panels ─poll─► latest picture ◄───push───── adsb.lol / adsb.fi + OpenSky + Changi weather,
                        ◄────── (your site only) ──"anyone ──► fetched over home internet,
                                                   watching?"   only while someone watches
 
@@ -199,6 +203,7 @@ other feeds miss. Anonymous access allows 400 requests a day, about an hour of w
 - Live positions: [adsb.lol](https://adsb.lol) (ODbL 1.0) with [adsb.fi](https://adsb.fi) as a backup,
   and [The OpenSky Network](https://opensky-network.org).
 - Routes and aircraft: [adsbdb](https://www.adsbdb.com) and [hexdb.io](https://hexdb.io).
+- Weather: Changi's METAR from the [Aviation Weather Center](https://aviationweather.gov) (NOAA).
 - Photos: [planespotters.net](https://www.planespotters.net), credited and linked on each photo.
 - Map: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, ODbL. The derived
   `src/map/basemap.json` is available under the same licence.

@@ -1,6 +1,7 @@
 import type { Units } from '../app/settings.ts';
 import { iataFlight } from '../data/static/airlines.ts';
 import { compassPoint, KM_PER_NM, normDeg } from '../geo/geo.ts';
+import type { Conditions } from '../track/sight.ts';
 import type { Track } from '../track/track.ts';
 
 const int = new Intl.NumberFormat('en-SG', { maximumFractionDigits: 0 });
@@ -110,6 +111,28 @@ const utc = new Intl.DateTimeFormat('en-GB', {
 
 export function clockSgt(ms: number): string {
   return sgt.format(ms);
+}
+
+const sgtHm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/** "23:42", Singapore time. */
+export function timeSgt(ms: number): string {
+  return sgtHm.format(ms);
+}
+
+/** Today's seeing for the sky view, e.g. "VIS 4 KM HAZE · CLOUD 1,800 FT"; empty when unknown. */
+export function fmtSeeing(c: Conditions, units: Units): string {
+  if (c.source === 'none') return '';
+  const parts: string[] = [];
+  if (c.visKm !== undefined) {
+    const km =
+      c.source === 'setting' && c.visKm >= 45
+        ? 'CLEAR'
+        : `${c.source === 'report' && c.visKm >= 10 ? '10+' : Number.isInteger(c.visKm) ? c.visKm : c.visKm.toFixed(1)} KM`;
+    parts.push(`VIS ${km}${c.what ? ` ${c.what.toUpperCase()}` : ''}${c.source === 'setting' ? ' (SET)' : ''}`);
+  }
+  if (c.air.ceilingFt !== undefined) parts.push(`CLOUD ${fmtAlt(c.air.ceilingFt, units).toUpperCase()}`);
+  return parts.join(' · ');
 }
 
 export function clockZulu(ms: number): string {

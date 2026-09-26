@@ -18,6 +18,7 @@ import {
   type FeedId,
   type FeedResponse,
   type SourceStatus,
+  type WeatherReport,
 } from '../../src/data/feed.ts';
 
 export interface UpstreamEnv {
@@ -236,6 +237,46 @@ async function getOpenSky(q: TrafficQuery, env: UpstreamEnv, ctx: Ctx): Promise<
   };
 }
 
+// ---------------------------------------------------------------- weather
+
+/** Changi's weather report: the visibility, haze and cloud a few kilometres from the balcony. */
+const METAR_URL = 'https://aviationweather.gov/api/data/metar?ids=WSSS&format=json';
+/** Changi reports every 30 minutes; checking every 10 picks each one up soon after it's issued. */
+const METAR_TTL_MS = 10 * 60_000;
+/** An older report says little about the air now. */
+const METAR_MAX_AGE_MS = 3 * 3600_000;
+
+const metar = {
+  report: undefined as WeatherReport | undefined,
+  checked: 0,
+  inflight: undefined as Promise<void> | undefined,
+};
+
+async function refreshMetar(): Promise<void> {
+  metar.checked = Date.now();
+  try {
+    const { body } = await fetchJson(METAR_URL);
+    const m = (Array.isArray(body) ? body[0] : undefined) as { icaoId?: unknown; rawOb?: unknown; obsTime?: unknown } | undefined;
+    if (typeof m?.rawOb === 'string' && typeof m.obsTime === 'number') {
+      metar.report = { id: typeof m.icaoId === 'string' ? m.icaoId : 'WSSS', raw: m.rawOb, t: m.obsTime * 1000 };
+    }
+  } catch {
+    // Keep the last report; the weather is a nicety, never a reason to hold up the traffic.
+  }
+}
+
+async function getMetar(ctx: Ctx): Promise<WeatherReport | undefined> {
+  if (Date.now() - metar.checked >= METAR_TTL_MS && !metar.inflight) {
+    const first = metar.checked === 0;
+    metar.inflight = refreshMetar().finally(() => (metar.inflight = undefined));
+    // The first time, wait for it (it runs alongside the feeds); after that, refresh in the background.
+    if (first) await metar.inflight;
+    else ctx.waitUntil(metar.inflight);
+  }
+  const r = metar.report;
+  return r && Date.now() - r.t < METAR_MAX_AGE_MS ? r : undefined;
+}
+
 // ---------------------------------------------------------------- merged picture
 
 /** Fetches every feed for the area and merges them per aircraft, freshest position first. */
@@ -245,11 +286,12 @@ export async function fetchTraffic(
   ctx: Ctx,
   opts: FetchOptions = {},
 ): Promise<FeedResponse> {
-  const [readsb, os] = await Promise.all([
+  const [readsb, os, wx] = await Promise.all([
     getReadsb(q, opts.rotate ?? false),
     opts.opensky === false ? undefined : getOpenSky(q, env, ctx),
+    getMetar(ctx),
   ]);
   const now = Date.now();
   const ac = mergeFeeds([readsb.ac, os?.ac ?? []]).filter((a) => now - a.t <= MAX_POSITION_AGE_MS);
-  return { v: 1, now, sources: os ? [readsb.status, os.status] : [readsb.status], ac };
+  return { v: 1, now, sources: os ? [readsb.status, os.status] : [readsb.status], ac, ...(wx ? { wx } : {}) };
 }

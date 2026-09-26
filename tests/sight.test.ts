@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { LocalFrame } from '../src/geo/geo.ts';
-import { closestApproach, fists, lookGuide, moonCompare, sightAt, viewEntryS, type Observer } from '../src/track/sight.ts';
+import {
+  airFor,
+  CLEAR_AIR,
+  closestApproach,
+  conditionsFor,
+  fists,
+  lookGuide,
+  moonCompare,
+  sightAt,
+  viewEntryS,
+  type Observer,
+} from '../src/track/sight.ts';
 import { Track } from '../src/track/track.ts';
 
 const obs: Observer = { lat: 1.3, lon: 103.9, heightM: 40, facing: 180, fov: 150 };
@@ -25,6 +36,70 @@ describe('sightAt', () => {
 
   it('puts east on your left when facing south', () => {
     expect(sightAt(obs, 10, -10, 3000).rel).toBeCloseTo(-45, 6);
+  });
+});
+
+describe('seeing through haze and cloud', () => {
+  const hazyDay = airFor(4, 30);
+  const hazyNight = airFor(4, -30);
+
+  it('loses low, distant aircraft in the haze, by day first', () => {
+    // 3,000 ft, 10 km out: a long, shallow sight line through the haze.
+    expect(sightAt(obs, 0, -10, 3000, CLEAR_AIR).visible).toBe(true);
+    const lost = sightAt(obs, 0, -10, 3000, hazyDay);
+    expect(lost).toMatchObject({ inFov: true, visible: false, obscured: 'haze' });
+    // 3,000 ft, 3.5 km out: close enough.
+    expect(sightAt(obs, 0, -3.5, 3000, hazyDay).visible).toBe(true);
+    // At night its lights carry further.
+    expect(sightAt(obs, 0, -5.5, 3000, hazyDay).visible).toBe(false);
+    expect(sightAt(obs, 0, -5.5, 3000, hazyNight).visible).toBe(true);
+  });
+
+  it('still sees high aircraft above the haze layer', () => {
+    // 35,000 ft, 12 km away: steep enough to look through only a little haze.
+    const high = sightAt(obs, 0, -12, 35_000, hazyDay);
+    expect(high.el).toBeGreaterThan(35);
+    expect(high.visible).toBe(true);
+  });
+
+  it('hides aircraft above a broken or overcast deck', () => {
+    const cloudy = airFor(10, 30, 2500);
+    expect(sightAt(obs, 0, -8, 2000, cloudy).visible).toBe(true);
+    expect(sightAt(obs, 0, -8, 5000, cloudy)).toMatchObject({ visible: false, obscured: 'cloud' });
+    // High cirrus doesn't count.
+    expect(airFor(10, 30, 28_000).ceilingFt).toBeUndefined();
+  });
+
+  it('only calls it haze when the aircraft would otherwise be in sight', () => {
+    expect(sightAt(obs, 0, 10, 3000, hazyDay).obscured).toBeUndefined(); // behind you
+  });
+
+  it('predicts when an aircraft comes out of the haze', () => {
+    // 12 km south at 3,000 ft, flying north towards the balcony.
+    const t = new Track(1, { hex: 'a', lat: obs.lat - 12 / 110.57, lon: obs.lon, t: T0, alt: 3000, gs: 200, trk: 0, src: 'adsb', via: 'sim' }, new LocalFrame(obs), T0);
+    expect(viewEntryS(t, obs, T0, CLEAR_AIR)).toBe(0);
+    expect(viewEntryS(t, obs, T0, hazyDay)).toBeGreaterThan(60);
+  });
+});
+
+describe('conditionsFor', () => {
+  const now = T0;
+  const report = (raw: string, ageMin = 10) => ({ id: 'WSSS', raw, t: now - ageMin * 60_000 });
+
+  it("uses Changi's report, with the light", () => {
+    const c = conditionsFor(report('METAR WSSS 261500Z 11004KT 4000 HZ FEW018 BKN080 29/26 Q1012 NOSIG'), 0, -20, now);
+    expect(c).toMatchObject({ source: 'report', visKm: 4, what: 'haze', air: { rangeKm: 6, ceilingFt: 8000 } });
+  });
+
+  it('treats "10 km or more" as a clear-ish day, and ignores stale reports', () => {
+    expect(conditionsFor(report('METAR WSSS 260600Z 16008KT 9999 FEW020 32/24 Q1010'), 0, 40, now).air.rangeKm).toBe(20);
+    expect(conditionsFor(report('METAR WSSS 260600Z 16008KT 2000 HZ', 240), 0, 40, now)).toEqual({ air: CLEAR_AIR, source: 'none' });
+    expect(conditionsFor(undefined, 0, 40, now)).toEqual({ air: CLEAR_AIR, source: 'none' });
+  });
+
+  it('lets a visibility set by hand override the report', () => {
+    const c = conditionsFor(report('METAR WSSS 261500Z 11004KT 4000 HZ BKN015 29/26 Q1012'), 45, 40, now);
+    expect(c).toEqual({ air: { rangeKm: 45 }, visKm: 45, source: 'setting' });
   });
 });
 

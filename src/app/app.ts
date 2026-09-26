@@ -3,7 +3,7 @@
  * alerts) → scope, sky view and panels.
  */
 import { RELAY_URL } from '../config.ts';
-import type { SourceStatus } from '../data/feed.ts';
+import type { SourceStatus, WeatherReport } from '../data/feed.ts';
 import { Simulator } from '../data/simulator.ts';
 import { Poller, ReadsbUrlSource, RelaySource, SimSource, type FeedSource, type PollResult } from '../data/source.ts';
 import { legProgress, Enricher, simRoute } from '../enrich/lookup.ts';
@@ -13,13 +13,13 @@ import { Scope, type Corners } from '../render/scope.ts';
 import { SkyView } from '../render/sky.ts';
 import { applyThemeToCss, PALETTES, type Palette } from '../render/theme.ts';
 import { classify, emergencyText, FlowMonitor } from '../track/classify.ts';
-import { closestApproach, lookGuide, trackSight, viewEntryS } from '../track/sight.ts';
+import { CLEAR_AIR, closestApproach, conditionsFor, lookGuide, trackSight, viewEntryS, type Conditions } from '../track/sight.ts';
 import { TrackStore } from '../track/store.ts';
 import type { Track } from '../track/track.ts';
 import { Sfx } from '../ui/audio.ts';
 import { DetailPanel } from '../ui/detail.ts';
 import { SettingsDialog, SetupDialog } from '../ui/dialogs.ts';
-import { clockSgt, clockZulu, displayName, fmtDuration, pad3 } from '../ui/format.ts';
+import { clockSgt, clockZulu, displayName, fmtDuration, fmtSeeing, pad3, timeSgt } from '../ui/format.ts';
 import { Compass, type Pointing } from '../ui/orientation.ts';
 import { ContactsPanel, LogPanel, Toasts } from '../ui/panels.ts';
 import { KeepAwake } from '../ui/wakelock.ts';
@@ -66,6 +66,9 @@ export class App {
   private pointed: Track | undefined;
   private pointing: Pointing | undefined;
   private sun: SkyBody = { az: 0, el: -90 };
+  /** Changi's latest weather report, and how far that lets you see. */
+  private wx: WeatherReport | undefined;
+  private seeing: Conditions = { air: CLEAR_AIR, source: 'none' };
   private moon: MoonInfo = { az: 0, el: -90, fraction: 0, phase: 0 };
   private activeRunways: string[] = [];
   private flowDir: string | undefined;
@@ -177,6 +180,11 @@ export class App {
 
   private onFeed({ resp, receivedAt, latencyMs }: PollResult): void {
     const { added } = this.store.ingest(resp, receivedAt, latencyMs);
+    if (resp.wx && resp.wx.raw !== this.wx?.raw) {
+      this.wx = resp.wx;
+      const seeing = fmtSeeing(conditionsFor(resp.wx, 0, this.sun.el, Date.now()), this.settings.get().units);
+      if (seeing) this.log.add(`WEATHER CHANGI ${timeSgt(resp.wx.t)} · ${seeing}`, 'system');
+    }
     const wasOk = this.link.state === 'live' || this.link.state === 'sim';
     const station = resp.station;
     const stationDown = station !== undefined && !station.online;
@@ -239,6 +247,8 @@ export class App {
 
     this.sun = sunPosition(now, obs.lat, obs.lon);
     this.moon = moonPosition(now, obs.lat, obs.lon);
+    this.seeing = conditionsFor(this.wx, s.visKm, this.sun.el, now);
+    const air = this.seeing.air;
 
     for (const t of this.store.list()) {
       t.route = t.a.sim ? simRoute(t.a.cs, t.a.sim.from, t.a.sim.to) : this.enricher.route(t.a.cs);
@@ -246,9 +256,9 @@ export class App {
       t.photo = t.a.sim ? null : this.enricher.photo(t.hex);
       t.leg = t.route ? legProgress(t.route, t.a) : undefined;
       t.cls = classify(t);
-      t.sight = trackSight(t, obs, now);
+      t.sight = trackSight(t, obs, now, air);
       t.cpa = closestApproach(t, now);
-      t.viewEtaS = t.sight.visible ? 0 : viewEntryS(t, obs, now);
+      t.viewEtaS = t.sight.visible ? 0 : viewEntryS(t, obs, now, air);
       this.flow.note(t, now);
 
       if (!t.a.sim && !t.a.gnd && t.sight.groundKm < rangeKm + 30) {
@@ -418,6 +428,7 @@ export class App {
         units: s.units,
         sun: this.sun,
         moon: this.moon,
+        air: this.seeing.air,
         pointer: this.pointing?.upright ? { az: heading, el: this.pointing.el } : undefined,
       });
     } catch (err) {
@@ -437,7 +448,7 @@ export class App {
           ? 'No data link. Check your connection, or switch to Simulation in Settings.'
           : 'No contacts match this filter.';
     this.contacts.update(this.visible, this.selected, s.units, now, emptyText);
-    this.detail.update(this.selected, { now, units: s.units, observer: s.observer, sunEl: this.sun.el });
+    this.detail.update(this.selected, { now, units: s.units, observer: s.observer, sunEl: this.sun.el, seeing: this.seeing });
 
     $('.clock .sgt').textContent = clockSgt(now);
     $('.clock .zulu').textContent = clockZulu(now);
@@ -447,7 +458,9 @@ export class App {
     const next = air
       .filter((t) => t.viewEtaS !== undefined && t.viewEtaS > 0)
       .sort((a, b) => a.viewEtaS! - b.viewEtaS!)[0];
-    $('.sky-next').textContent = `${inView} IN VIEW${next ? ` · NEXT ${displayName(next)} IN ${fmtDuration(next.viewEtaS!)}` : ''}`;
+    const seeing = fmtSeeing(this.seeing, s.units);
+    $('.sky-next').textContent =
+      `${inView} IN VIEW${seeing ? ` · ${seeing}` : ''}${next ? ` · NEXT ${displayName(next)} IN ${fmtDuration(next.viewEtaS!)}` : ''}`;
     const light = daylight(this.sun.el);
     $('.sky-light').textContent = light === 'day' ? 'DAY' : light === 'twilight' ? 'TWILIGHT' : 'NIGHT · LOOK FOR LIGHTS';
 

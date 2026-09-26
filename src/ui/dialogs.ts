@@ -163,7 +163,7 @@ export class SetupDialog {
 type FieldKind = 'num' | 'bool' | 'str';
 const FIELDS: Record<string, FieldKind> = {
   mode: 'str', orientation: 'str', theme: 'str', units: 'str', labels: 'str',
-  trailMin: 'num', leaderS: 'num', sweepS: 'num', maxAltFt: 'num', showGround: 'bool', crt: 'bool',
+  trailMin: 'num', leaderS: 'num', sweepS: 'num', maxAltFt: 'num', visKm: 'num', showGround: 'bool', crt: 'bool',
   sound: 'bool', volume: 'num', alertView: 'bool', alertSpecial: 'bool', alertNew: 'bool',
   keepAwake: 'bool', compassOffset: 'num', source: 'str', customUrl: 'str', pollS: 'num', relayUrl: 'str',
 };
@@ -219,6 +219,7 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
           <label>Data blocks <select name="labels"><option value="full">Full</option><option value="compact">Compact</option><option value="off">Off</option></select></label>
           <label>History trail <select name="trailMin"><option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option><option value="5">5 min</option></select></label>
           <label>Leader line <select name="leaderS"><option value="0">Off</option><option value="30">30 s ahead</option><option value="60">1 min ahead</option><option value="120">2 min ahead</option></select></label>
+          <label>How far you can see <select name="visKm"><option value="0">Auto: Changi weather report</option><option value="45">Clear, no haze</option><option value="20">20 km</option><option value="10">10 km</option><option value="5">5 km</option><option value="3">3 km</option><option value="1">1 km</option></select></label>
           <label>Altitude filter <select name="maxAltFt"><option value="0">Show all</option><option value="30000">Below 30,000 ft</option><option value="20000">Below 20,000 ft</option><option value="10000">Below 10,000 ft</option><option value="5000">Below 5,000 ft</option></select></label>
           <label>Sweep: one pass every <output data-for="sweepS"></output><input name="sweepS" type="range" min="2" max="8" step="0.5"></label>
           <label class="check"><input type="checkbox" name="showGround"> Show aircraft on the ground</label>

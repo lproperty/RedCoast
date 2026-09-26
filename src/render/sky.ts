@@ -6,7 +6,7 @@
 import type { MoonInfo, SkyBody } from '../geo/astro.ts';
 import { compassPoint, DEG, signedDeg } from '../geo/geo.ts';
 import { HORIZON_MARKS } from '../map/map.ts';
-import { FIST_DEG, lookGuide, sightAt, type Observer } from '../track/sight.ts';
+import { CLEAR_AIR, FIST_DEG, lookGuide, sightAt, type Air, type Observer } from '../track/sight.ts';
 import type { Track } from '../track/track.ts';
 import { displayName, fmtDist, pad3 } from '../ui/format.ts';
 import type { Palette } from './theme.ts';
@@ -27,6 +27,8 @@ export interface SkyInput {
   moon: MoonInfo;
   /** Where the phone is pointing, in point mode. */
   pointer?: { az: number; el: number };
+  /** How far you can see today: aircraft lost in haze or cloud are drawn faint. */
+  air?: Air;
 }
 
 const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
@@ -355,7 +357,7 @@ export class SkyView {
       .filter((t) => !t.a.gnd)
       .map((t) => {
         const d = t.display(now);
-        return { t, sight: sightAt(o, d.x, d.y, t.trueAltitude(now)) };
+        return { t, sight: sightAt(o, d.x, d.y, t.trueAltitude(now), s.air ?? CLEAR_AIR) };
       })
       .filter(({ sight }) => sight.slantKm < 80 && sight.el > -2)
       .sort((a, b) => (a.t === s.selected ? -1 : b.t === s.selected ? 1 : a.sight.slantKm - b.sight.slantKm));

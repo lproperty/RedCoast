@@ -14,7 +14,7 @@
  * Standard fetch/Request/Response only: runs as a Cloudflare Worker (worker.ts) and in the
  * Vite dev server (vite.config.ts).
  */
-import { MAX_POSITION_AGE_MS, type FeedAircraft, type FeedResponse } from '../../src/data/feed.ts';
+import { MAX_POSITION_AGE_MS, type FeedAircraft, type FeedResponse, type WeatherReport } from '../../src/data/feed.ts';
 import { fetchTraffic, type Ctx, type TrafficQuery, type UpstreamEnv } from './upstream.ts';
 
 export type { Ctx, TrafficQuery } from './upstream.ts';
@@ -103,6 +103,13 @@ function corsHeaders(origin: string | null, env: Env): Record<string, string> {
   };
 }
 
+/** The station's weather report, if it looks like one. */
+function weatherReport(v: unknown): WeatherReport | undefined {
+  const w = v as Partial<WeatherReport> | undefined;
+  if (!w || typeof w.id !== 'string' || typeof w.raw !== 'string' || typeof w.t !== 'number') return undefined;
+  return { id: w.id.slice(0, 8), raw: w.raw.slice(0, 400), t: w.t };
+}
+
 function json(body: unknown, status: number, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -124,11 +131,13 @@ async function stationRoute(request: Request, url: URL, env: Env, station: Stati
     return json({ error: 'body is not JSON' }, 400);
   }
   if (body?.v !== 1 || !Array.isArray(body.ac) || !Array.isArray(body.sources)) return json({ error: 'not a RedCoast picture' }, 400);
+  const wx = weatherReport(body.wx);
   const clean: FeedResponse = {
     v: 1,
     now: Number(body.now) || Date.now(),
     sources: body.sources.slice(0, 8),
     ac: body.ac.filter((a) => a && typeof a.lat === 'number' && typeof a.lon === 'number' && typeof a.t === 'number').slice(0, 3000),
+    ...(wx ? { wx } : {}),
   };
   return json(await station.push(clean), 200);
 }
@@ -161,7 +170,8 @@ export async function handleRequest(request: Request, env: Env, ctx: Ctx, statio
     const online = ageMs !== null && ageMs < STATION_ONLINE_MS;
     if (online || env.DIRECT_FALLBACK !== '1') {
       const ac = snap.resp ? withinRadius(snap.resp.ac, q).filter((a) => now - a.t <= MAX_POSITION_AGE_MS) : [];
-      const body: FeedResponse = { v: 1, now, sources: snap.resp?.sources ?? [], ac, station: { online, ageMs } };
+      const wx = snap.resp?.wx;
+      const body: FeedResponse = { v: 1, now, sources: snap.resp?.sources ?? [], ac, station: { online, ageMs }, ...(wx ? { wx } : {}) };
       return json(body, 200, cors);
     }
   }

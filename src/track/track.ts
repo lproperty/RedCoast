@@ -42,6 +42,10 @@ export class Track {
   readonly tn: number;
   a: FeedAircraft;
   readonly firstSeen: number;
+  /** The first report: seen low near its origin, it dates the take-off. */
+  readonly first: { t: number; lat: number; lon: number; alt?: number };
+  /** When it was seen leaving the ground (client clock). */
+  liftoff: number | undefined;
   lastUpdate: number;
   /** Position of the latest fix in the local frame. */
   fx = 0;
@@ -73,6 +77,7 @@ export class Track {
     this.tn = tn;
     this.a = a;
     this.firstSeen = now;
+    this.first = { t: a.t, lat: a.lat, lon: a.lon, ...(a.gnd ? {} : { alt: a.alt }) };
     this.lastUpdate = now;
     if (a.trate !== undefined) this.turnRate = clamp(a.trate, -4, 4);
     this.place(frame);
@@ -119,9 +124,11 @@ export class Track {
     }
 
     const before = this.display(now);
+    const wasOnGround = this.a.gnd;
     const merged = { ...this.a, ...next } as Record<string, unknown>;
     for (const k of EXACT_KEYS) if (!(k in next)) delete merged[k];
     this.a = merged as unknown as FeedAircraft;
+    if (wasOnGround && !this.a.gnd) this.liftoff = this.a.t;
     [this.fx, this.fy] = frame.toXY(this.a.lat, this.a.lon);
 
     const after = this.predict(now);

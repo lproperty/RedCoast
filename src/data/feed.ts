@@ -93,6 +93,18 @@ export interface FeedResponse {
     /** How long ago the station last pushed (null: never). */
     ageMs: number | null;
   };
+  /** The latest weather report from Changi, for how far you can see. */
+  wx?: WeatherReport;
+}
+
+/** A METAR: an airport's routine weather observation (visibility, haze, cloud). */
+export interface WeatherReport {
+  /** ICAO station, e.g. "WSSS". */
+  id: string;
+  /** The report as issued, e.g. "METAR WSSS 261500Z 11004KT 4000 HZ FEW018 …". */
+  raw: string;
+  /** Observation time (epoch ms). */
+  t: number;
 }
 
 /** Positions older than this are dropped: they are more misleading than useful. */

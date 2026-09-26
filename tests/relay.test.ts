@@ -217,6 +217,26 @@ describe('home station mailbox', () => {
     expect(body.sources).toEqual(picture.sources);
   });
 
+  it("passes the station's weather report on to viewers, and drops a malformed one", async () => {
+    const st = new MemStation();
+    const now = Date.now();
+    const wx = { id: 'WSSS', raw: 'METAR WSSS 261500Z 11004KT 4000 HZ FEW018 29/26 Q1012 NOSIG', t: now - 600_000 };
+    const push = (extra: object) =>
+      handleRequest(
+        req('/v1/push', { method: 'POST', token: TOKEN, body: JSON.stringify({ v: 1, now, sources: [], ac: [], ...extra }) }),
+        envS,
+        ctx,
+        st,
+      );
+    const view = async () =>
+      (await (await handleRequest(req('/v1/traffic?lat=1.3&lon=103.9&r=30', { origin: 'https://lproperty.github.io' }), envS, ctx, st)).json()) as FeedResponse;
+
+    expect((await push({ wx })).status).toBe(200);
+    expect((await view()).wx).toEqual(wx);
+    expect((await push({ wx: { id: 'WSSS', raw: 42 } })).status).toBe(200);
+    expect((await view()).wx).toBeUndefined();
+  });
+
   it('rejects malformed pictures', async () => {
     const st = new MemStation();
     const push = (body: string) => handleRequest(req('/v1/push', { method: 'POST', token: TOKEN, body }), envS, ctx, st);
@@ -240,5 +260,50 @@ describe('Station Durable Object', () => {
     const again = await call('/read');
     expect(Number(again.headers.get('X-Station-At'))).toBeGreaterThan(0);
     expect(await again.json()).toMatchObject({ v: 1 });
+  });
+});
+
+describe('weather report', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const report = (obs: number) => [
+    { icaoId: 'WSSS', obsTime: obs, rawOb: 'METAR WSSS 261500Z 11004KT 4000 HZ FEW018 29/26 Q1012 NOSIG' },
+  ];
+  const stub = (weather: () => Response) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('aviationweather.gov')) return weather();
+        if (url.includes('adsb')) return Response.json({ now: Date.now(), ac: [] });
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+  it("adds Changi's latest METAR to the picture, then reuses it for a while", async () => {
+    vi.resetModules();
+    const { fetchTraffic } = await import('../relay/src/upstream.ts');
+    const obs = Math.floor(Date.now() / 1000) - 600;
+    const weather = vi.fn(() => Response.json(report(obs)));
+    stub(weather);
+    const first = await fetchTraffic({ lat: 1.3, lon: 103.9, r: 30 }, {}, ctx, { opensky: false });
+    expect(first.wx).toEqual({ id: 'WSSS', raw: expect.stringContaining('4000 HZ'), t: obs * 1000 });
+    const again = await fetchTraffic({ lat: 1.3, lon: 103.9, r: 30 }, {}, ctx, { opensky: false });
+    expect(again.wx).toEqual(first.wx);
+    expect(weather).toHaveBeenCalledTimes(1);
+  });
+
+  it('still delivers the traffic when the weather service is down, or its report is stale', async () => {
+    vi.resetModules();
+    let { fetchTraffic } = await import('../relay/src/upstream.ts');
+    stub(() => new Response('down', { status: 503 }));
+    const down = await fetchTraffic({ lat: 1.3, lon: 103.9, r: 30 }, {}, ctx, { opensky: false });
+    expect(down.sources[0]!.ok).toBe(true);
+    expect(down.wx).toBeUndefined();
+
+    vi.resetModules();
+    ({ fetchTraffic } = await import('../relay/src/upstream.ts'));
+    stub(() => Response.json(report(Math.floor(Date.now() / 1000) - 5 * 3600)));
+    expect((await fetchTraffic({ lat: 1.3, lon: 103.9, r: 30 }, {}, ctx, { opensky: false })).wx).toBeUndefined();
   });
 });

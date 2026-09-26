@@ -8,12 +8,14 @@ import { AIRLINES, splitCallsign } from '../data/static/airlines.ts';
 import { lookupType, prettyDesc } from '../data/static/aircraftTypes.ts';
 import { compassName, M_PER_FT, signedDeg } from '../geo/geo.ts';
 import { emergencyText } from '../track/classify.ts';
-import { lookGuide, moonCompare, type Observer } from '../track/sight.ts';
+import { legDistances, legTimes } from '../track/eta.ts';
+import { lookGuide, moonCompare, type Conditions, type Observer } from '../track/sight.ts';
 import type { Track } from '../track/track.ts';
 import {
   displayName,
   escapeHtml as esc,
   flag,
+  fmtAlt,
   fmtAltBoth,
   fmtBrg,
   fmtDist,
@@ -23,6 +25,7 @@ import {
   fmtSpeedBoth,
   fmtVr,
   pad3,
+  timeSgt,
 } from './format.ts';
 
 export interface DetailContext {
@@ -30,6 +33,8 @@ export interface DetailContext {
   units: Units;
   observer: Observer;
   sunEl: number;
+  /** How far you can see today. */
+  seeing: Conditions;
 }
 
 const KIND_TEXT: Record<string, string> = {
@@ -123,6 +128,11 @@ function look(t: Track, c: DetailContext): string {
   if (s.visible) {
     headline = `LOOK ${esc(g.side.toUpperCase())} · ${esc(g.up.toUpperCase())}`;
     cls = 'go';
+  } else if (s.obscured === 'cloud') {
+    const base = c.seeing.air.ceilingFt;
+    headline = `Hidden above the cloud${base !== undefined ? ` (base ${fmtAlt(base, c.units)})` : ''}.`;
+  } else if (s.obscured === 'haze') {
+    headline = `Hidden by ${esc(c.seeing.what ?? 'haze')}: it's ${fmtDist(s.slantKm, c.units)} away and you can see about ${fmtDist(c.seeing.air.rangeKm, c.units)} right now.`;
   } else if (s.inFov && s.el < 1) {
     headline = `Low on the horizon, ${fmtDist(s.slantKm, c.units)} away. Likely hidden by buildings or haze.`;
   } else if (s.inFov) {
@@ -169,30 +179,37 @@ function route(t: Track, c: DetailContext): string {
   const leg = t.leg;
   const from = leg?.from ?? r.legs[0]!;
   const to = leg?.to ?? r.legs[r.legs.length - 1]!;
-  const apt = (a: typeof from) => `<div class="apt">
+  const apt = (a: typeof from, when: string | undefined) => `<div class="apt">
       <b>${esc(a.iata ?? a.icao)}</b>
       <span>${flag(a.country)} ${esc(a.city ?? a.countryName ?? '')}</span>
       <small>${esc(a.name)}</small>
+      ${when ? `<span class="apt-time">${when}</span>` : ''}
     </div>`;
+  // Estimates, so to the minute when close and to 5 minutes when hours away.
+  const clock = (at: number) => {
+    const step = Math.abs(at - c.now) > 2 * 3_600_000 ? 300_000 : 60_000;
+    return `${timeSgt(Math.round(at / step) * step)} SGT`;
+  };
+  const times = leg ? legTimes(t, leg, c.now) : {};
+  const departed = times.departed ? `Took off ${t.liftoff !== undefined ? '' : '~'}${clock(times.departed.at)}` : undefined;
+  const arrives =
+    times.arrives === undefined ? undefined : times.arrives - c.now < 60_000 ? 'Landing now' : `Lands ~${clock(times.arrives)}`;
   const via = r.legs.length > 2 ? `<div class="dim">Full route: ${r.legs.map((l) => esc(l.iata ?? l.icao)).join(' → ')}</div>` : '';
   let progress = '';
   if (leg) {
     const pct = Math.round(leg.fraction * 100);
-    // Near the ends the current speed is a poor guide (climbing out, slowing down), so use a
-    // typical cruise speed for the long part of the journey.
-    const kt = t.a.gs ? (leg.remainingKm > 200 ? Math.max(t.a.gs, 450) : t.a.gs) : undefined;
-    const hours = kt ? leg.remainingKm / (kt * 1.852) : undefined;
-    const eta = hours !== undefined && leg.remainingKm > 5 ? ` · roughly ${fmtDuration(hours * 3600)} of flying left` : '';
+    const dist = leg.plausible ? legDistances(t.a, leg) : { flownKm: leg.flownKm, toGoKm: leg.remainingKm };
+    const left = times.arrives !== undefined ? (times.arrives - c.now) / 1000 : undefined;
+    const eta = left !== undefined && left >= 60 ? ` · about ${fmtDuration(left)} of flying left` : '';
     progress = `<div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
         <div style="width:${pct}%"></div><i style="left:${pct}%">✈</i></div>
-      <div class="route-meta">${fmtKm(leg.flownKm)} flown · ${fmtKm(leg.remainingKm)} to go (${fmtKm(leg.totalKm)} total)${eta}</div>`;
+      <div class="route-meta">${fmtKm(dist.flownKm)} flown · ${fmtKm(dist.toGoKm)} to go (${fmtKm(leg.totalKm)} total)${eta}</div>`;
   }
   const warn =
     leg && !leg.plausible
       ? `<p class="warn">This route doesn't match where the aircraft is. The database entry for ${esc(r.callsign)} may be out of date.</p>`
       : '';
-  void c;
-  return `<h3>ROUTE</h3><div class="route-line">${apt(from)}<div class="route-arrow">➜</div>${apt(to)}</div>${progress}${via}${warn}
+  return `<h3>ROUTE</h3><div class="route-line">${apt(from, departed)}<div class="route-arrow">➜</div>${apt(to, arrives)}</div>${progress}${via}${warn}
     <div class="src">route data: ${esc(r.source === 'sim' ? 'simulator' : r.source === 'adsbdb' ? 'adsbdb.com' : 'hexdb.io')}</div>`;
 }
 

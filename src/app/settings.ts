@@ -46,6 +46,8 @@ export interface Settings {
   pollS: number;
   /** Hide contacts above this altitude (ft); 0 = show all. */
   maxAltFt: number;
+  /** How far you can see, km, for what counts as in view; 0 = from Changi's weather report. */
+  visKm: number;
   /** Compass correction for point mode, degrees. */
   compassOffset: number;
   keepAwake: boolean;
@@ -81,6 +83,7 @@ export const DEFAULTS: Settings = {
   relayUrl: '',
   pollS: 3,
   maxAltFt: 0,
+  visKm: 0,
   compassOffset: 0,
   keepAwake: false,
 };
@@ -113,6 +116,7 @@ export function sanitize(raw: unknown): Settings {
   s.trailMin = clampNum(s.trailMin, 0, 10, DEFAULTS.trailMin);
   s.leaderS = clampNum(s.leaderS, 0, 300, DEFAULTS.leaderS);
   s.maxAltFt = clampNum(s.maxAltFt, 0, 60000, 0);
+  s.visKm = clampNum(s.visKm, 0, 45, 0);
   s.compassOffset = clampNum(s.compassOffset, -180, 180, 0);
   if (!['ppi', 'sector'].includes(s.mode)) s.mode = DEFAULTS.mode;
   if (!['facing', 'north'].includes(s.orientation)) s.orientation = DEFAULTS.orientation;
