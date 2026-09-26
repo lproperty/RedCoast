@@ -17,5 +17,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "relay/src", "tests"]
+  "include": ["src", "relay/src", "station/station.ts", "tests"]
 }

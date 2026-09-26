@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handleRequest, originAllowed, parseQuery } from '../relay/src/handler.ts';
+import type { FeedResponse } from '../src/data/feed.ts';
+import { handleRequest, originAllowed, parseQuery, type StationStore } from '../relay/src/handler.ts';
+import { Station } from '../relay/src/worker.ts';
 
 const env = { ALLOWED_ORIGINS: 'https://lproperty.github.io, http://localhost:*' };
 const ctx = { waitUntil: (p: Promise<unknown>) => void p.catch(() => undefined) };
@@ -136,5 +138,107 @@ describe('handleRequest', () => {
     await call('/v1/traffic?lat=1.5&lon=104.3&r=20', { origin: 'https://lproperty.github.io' });
     expect(hits).not.toContain('api.adsb.lol');
     expect(hits).toContain('opendata.adsb.fi');
+  });
+});
+
+describe('home station mailbox', () => {
+  const TOKEN = 'a'.repeat(64);
+  const envS = { ...env, STATION_TOKEN: TOKEN };
+
+  class MemStation implements StationStore {
+    at: number | null = null;
+    resp: FeedResponse | null = null;
+    lastViewer = 0;
+    async read() {
+      this.lastViewer = Date.now();
+      return { at: this.at, resp: this.resp };
+    }
+    async push(r: FeedResponse) {
+      this.resp = r;
+      this.at = Date.now();
+      return { watching: Date.now() - this.lastViewer < 60_000 };
+    }
+    async status() {
+      return { watching: Date.now() - this.lastViewer < 60_000, ageMs: this.at === null ? null : Date.now() - this.at };
+    }
+  }
+
+  const req = (path: string, init: { method?: string; token?: string; origin?: string; body?: string } = {}) =>
+    new Request(`https://relay.test${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        ...(init.token ? { Authorization: `Bearer ${init.token}` } : {}),
+        ...(init.origin ? { Origin: init.origin } : {}),
+      },
+      body: init.body,
+    });
+
+  it('only accepts the station with the right token', async () => {
+    const st = new MemStation();
+    expect((await handleRequest(req('/v1/station'), envS, ctx, st)).status).toBe(401);
+    expect((await handleRequest(req('/v1/station', { token: 'b'.repeat(64) }), envS, ctx, st)).status).toBe(401);
+    expect((await handleRequest(req('/v1/station', { token: TOKEN }), envS, ctx, st)).status).toBe(200);
+    // A missing or too-short secret on the relay locks everyone out.
+    expect((await handleRequest(req('/v1/station', { token: 'short' }), { ...env, STATION_TOKEN: 'short' }, ctx, st)).status).toBe(401);
+    expect((await handleRequest(req('/v1/station', { token: TOKEN }), envS, ctx)).status).toBe(404);
+  });
+
+  it('serves the pushed picture to viewers, filtered to their area, and tells the station someone is watching', async () => {
+    const st = new MemStation();
+    const now = Date.now();
+    const status = async () => (await (await handleRequest(req('/v1/station', { token: TOKEN }), envS, ctx, st)).json()) as { watching: boolean };
+    expect((await status()).watching).toBe(false);
+
+    // A viewer arrives before the station has ever pushed.
+    const first = (await (await handleRequest(req('/v1/traffic?lat=1.3&lon=103.9&r=30', { origin: 'https://lproperty.github.io' }), envS, ctx, st)).json()) as FeedResponse;
+    expect(first.station).toEqual({ online: false, ageMs: null });
+    expect(first.ac).toEqual([]);
+    expect((await status()).watching).toBe(true);
+
+    const picture: FeedResponse = {
+      v: 1,
+      now,
+      sources: [{ id: 'adsblol', ok: true, count: 3 }],
+      ac: [
+        { hex: 'near01', lat: 1.25, lon: 103.95, t: now - 1000, src: 'adsb', via: 'adsblol' },
+        { hex: 'far001', lat: 2.5, lon: 105.0, t: now - 1000, src: 'adsb', via: 'adsblol' },
+        { hex: 'old001', lat: 1.3, lon: 103.9, t: now - 120_000, src: 'adsb', via: 'adsblol' },
+      ],
+    };
+    const pushed = await handleRequest(req('/v1/push', { method: 'POST', token: TOKEN, body: JSON.stringify(picture) }), envS, ctx, st);
+    expect(pushed.status).toBe(200);
+    expect(await pushed.json()).toEqual({ watching: true });
+
+    const res = await handleRequest(req('/v1/traffic?lat=1.3&lon=103.9&r=30', { origin: 'https://lproperty.github.io' }), envS, ctx, st);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://lproperty.github.io');
+    const body = (await res.json()) as FeedResponse;
+    expect(body.ac.map((a) => a.hex)).toEqual(['near01']);
+    expect(body.station?.online).toBe(true);
+    expect(body.sources).toEqual(picture.sources);
+  });
+
+  it('rejects malformed pictures', async () => {
+    const st = new MemStation();
+    const push = (body: string) => handleRequest(req('/v1/push', { method: 'POST', token: TOKEN, body }), envS, ctx, st);
+    expect((await push('not json')).status).toBe(400);
+    expect((await push(JSON.stringify({ v: 2, ac: [], sources: [] }))).status).toBe(400);
+    expect((await push(JSON.stringify({ v: 1, ac: 'x', sources: [] }))).status).toBe(400);
+    expect(st.at).toBeNull();
+  });
+});
+
+describe('Station Durable Object', () => {
+  it('keeps the latest picture and tracks viewers', async () => {
+    const station = new Station();
+    const call = (path: string, init?: RequestInit) => station.fetch(new Request(`https://station${path}`, init));
+    expect(await (await call('/status')).json()).toEqual({ watching: false, ageMs: null });
+    const read = await call('/read');
+    expect(read.headers.get('X-Station-At')).toBe('');
+    expect(await read.json()).toBeNull();
+    const pushed = await call('/push', { method: 'POST', body: JSON.stringify({ v: 1, now: 1, sources: [], ac: [] }) });
+    expect(await pushed.json()).toEqual({ watching: true });
+    const again = await call('/read');
+    expect(Number(again.headers.get('X-Station-At'))).toBeGreaterThan(0);
+    expect(await again.json()).toMatchObject({ v: 1 });
   });
 });

@@ -6,10 +6,16 @@
   "workers_dev": true,
   "vars": {
     // Only these sites may read the relay from a browser.
-    "ALLOWED_ORIGINS": "https://lproperty.github.io,http://localhost:*,http://127.0.0.1:*"
+    "ALLOWED_ORIGINS": "https://lproperty.github.io,http://localhost:*,http://127.0.0.1:*",
+    // The feeds refuse Cloudflare's servers, so don't try them directly when the station is offline.
+    "DIRECT_FALLBACK": "0"
   },
-  // Optional secrets (free OpenSky account → 10x more OpenSky requests per day):
-  //   npx wrangler secret put OPENSKY_CLIENT_ID
-  //   npx wrangler secret put OPENSKY_CLIENT_SECRET
+  // Holds the home station's latest picture (see station/).
+  "durable_objects": {
+    "bindings": [{ "name": "STATION", "class_name": "Station" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Station"] }],
+  // Secrets (never in this file):
+  //   npx wrangler secret put STATION_TOKEN   shared with the home station (npm run station:install sets it)
   "observability": { "enabled": false }
 }

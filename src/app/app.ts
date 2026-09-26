@@ -69,12 +69,22 @@ export class App {
   private moon: MoonInfo = { az: 0, el: -90, fraction: 0, phase: 0 };
   private activeRunways: string[] = [];
   private flowDir: string | undefined;
-  private link: { state: LinkState; sources: SourceStatus[]; latency: number; lastOk: number; error?: string } = {
+  private link: {
+    state: LinkState;
+    sources: SourceStatus[];
+    latency: number;
+    /** Last time we received usable data. */
+    lastOk: number;
+    error?: string;
+    station?: { online: boolean; ageMs: number | null };
+  } = {
     state: 'connecting',
     sources: [],
     latency: 0,
     lastOk: 0,
   };
+  /** When we first saw the home station offline in the current streak (it takes ~10 s to wake up). */
+  private stationWaitSince = 0;
   private pictureBuilt = false;
   private lastViewToast = 0;
 
@@ -160,13 +170,31 @@ export class App {
   private onFeed({ resp, receivedAt, latencyMs }: PollResult): void {
     const { added } = this.store.ingest(resp, receivedAt, latencyMs);
     const wasOk = this.link.state === 'live' || this.link.state === 'sim';
-    const anyOk = resp.sources.some((x) => x.ok);
-    const allOk = resp.sources.every((x) => x.ok);
+    const station = resp.station;
+    const stationDown = station !== undefined && !station.online;
+    const anyOk = !stationDown && resp.sources.some((x) => x.ok);
+    const allOk = anyOk && resp.sources.every((x) => x.ok);
+    let state: LinkState = this.source.id === 'sim' ? 'sim' : anyOk ? (allOk ? 'live' : 'degraded') : 'down';
+    let error: string | undefined;
+    if (stationDown) {
+      this.stationWaitSince ||= receivedAt;
+      // Our poll just told the station someone is watching; give it a moment to start streaming.
+      if (receivedAt - this.stationWaitSince < 25_000) state = 'connecting';
+      else
+        error =
+          station.ageMs === null
+            ? 'The home station has never connected to the relay.'
+            : `The home station last reported ${fmtDuration(station.ageMs / 1000)} ago. Is the computer running it switched on?`;
+    } else {
+      this.stationWaitSince = 0;
+    }
     this.link = {
-      state: this.source.id === 'sim' ? 'sim' : anyOk ? (allOk ? 'live' : 'degraded') : 'down',
+      state,
       sources: resp.sources,
       latency: latencyMs,
-      lastOk: receivedAt,
+      lastOk: anyOk ? receivedAt : this.link.lastOk,
+      error,
+      station,
     };
     if (!wasOk && anyOk) {
       this.log.add(
@@ -440,12 +468,21 @@ export class App {
     const s = this.settings.get();
     const down = s.source !== 'sim' && this.link.state === 'down' && !this.store.tracks.size && now - this.link.lastOk > 8000;
     $('.nolink').hidden = !down;
-    if (down) $('.nolink .why').textContent = this.link.error ?? 'No response from the data relay.';
+    if (down) {
+      const stationOff = this.link.station && !this.link.station.online;
+      $('.nolink h2').textContent = stationOff ? 'HOME STATION OFFLINE' : 'NO DATA LINK';
+      $('.nolink .why').textContent = this.link.error ?? 'No response from the data relay.';
+    }
   }
 
   private statusText(): string {
     const l = this.link;
     const lines = [`Link: ${l.state.toUpperCase()}${l.latency ? ` · ${Math.round(l.latency)} ms` : ''}`];
+    if (l.station) {
+      lines.push(
+        `Home station: ${l.station.online ? 'online' : 'offline'}${l.station.ageMs !== null ? ` · last push ${fmtDuration(l.station.ageMs / 1000)} ago` : ' · never connected'}`,
+      );
+    }
     for (const x of l.sources) {
       lines.push(
         `${(SOURCE_NAMES[x.id] ?? x.id).padEnd(9)} ${x.ok ? 'OK ' : 'ERR'} ${String(x.count).padStart(3)} aircraft` +
@@ -462,10 +499,10 @@ export class App {
     led.dataset.state = this.link.state;
     const names = this.link.sources.filter((x) => x.ok).map((x) => SOURCE_NAMES[x.id] ?? x.id);
     const text: Record<LinkState, string> = {
-      connecting: 'CONNECTING',
+      connecting: this.stationWaitSince ? 'WAKING STATION' : 'CONNECTING',
       live: `LIVE ${names.join('+')}`,
       degraded: names.length ? `PARTIAL ${names.join('+')}` : 'LINK DEGRADED',
-      down: 'NO LINK',
+      down: this.link.station && !this.link.station.online ? 'STATION OFFLINE' : 'NO LINK',
       sim: 'SIMULATION',
     };
     $('.link-text').textContent = text[this.link.state];

@@ -68,19 +68,29 @@ been. On the locked target, the dashed line and ring from your position are its 
 ## How it works
 
 ```
- your browser (GitHub Pages)                      Cloudflare Worker (relay/)
- ┌────────────────────────────┐   ~11 km-rounded   ┌─────────────────────────────┐
- │ scope · sky view · panels  │ ─────────────────► │ adsb.lol  (fallback adsb.fi)│
- │ tracking, geometry, alerts │ ◄───────────────── │ + OpenSky Network, merged   │
- └────────────────────────────┘    merged feed     └─────────────────────────────┘
-        │  routes, aircraft, photos (direct; these APIs allow browsers)
-        └──► adsbdb.com · hexdb.io · planespotters.net
+  phone / browser             Cloudflare Worker             home station
+  (GitHub Pages)              (relay/)                      (station/, always-on computer at home)
+
+  scope · sky · panels ─poll─► latest picture ◄───push───── adsb.lol / adsb.fi + OpenSky,
+                       ◄────── (your site only) ──"anyone ──► fetched over home internet,
+                                                  watching?"   only while someone watches
+
+  routes · aircraft · photos ──► adsbdb.com · hexdb.io · planespotters.net   (direct: they allow browsers)
 ```
 
-- **Why a relay?** The free ADS-B feeds don't send CORS headers, so a page on github.io can't read them.
-  The relay (about 300 lines, `relay/src/handler.ts`) fetches them server-side and merges them per aircraft,
-  keeping the freshest position. It paces OpenSky's daily credits and backs off when a feed rate-limits it.
-  It only answers the origins listed in `relay/wrangler.jsonc`.
+- **Why a home station?** The free ADS-B feeds don't send CORS headers, so a page on github.io can't
+  read them. They also refuse cloud servers: OpenSky blocks every hosting provider, adsb.lol throttles
+  Cloudflare Workers, and adsb.fi blocks them. A home connection is welcome everywhere.
+  So a small service on a computer at home (`station/`) fetches the feeds, merges them per aircraft
+  (freshest position wins), and pushes the picture to the relay. Your phone reads it from there,
+  over Wi-Fi or mobile data.
+- **Only while you're watching.** When nobody has the site open, the station just asks the relay every
+  10 s whether anyone is watching. It streams (every 4 s, alternating adsb.lol and adsb.fi) only while
+  someone is, which spares the free feeds and OpenSky's daily credits. Opening the site wakes it within
+  about 10 s.
+- **The relay** (`relay/src/`) is a Cloudflare Worker. A Durable Object keeps the latest picture in
+  memory. Browsers may only read it from the origins in `relay/wrangler.jsonc`, and only the station,
+  holding a shared secret, may write it.
 - **Tracking** (`src/track/`): dead reckoning with turn rate, correction blending, clock-offset correction,
   outlier rejection (a position the aircraft couldn't have flown to is held until a second report agrees),
   and history trails.
@@ -93,8 +103,8 @@ been. On the locked target, the dashed line and ring from your position are its 
 ## Privacy
 
 - Your observation post is stored **only in your browser** (localStorage).
-- The relay, and the feeds behind it, only ever receive your position **rounded to 0.1° (~11 km)**. The
-  precise geometry is computed on your device.
+- The relay only ever receives your position **rounded to 0.1° (~11 km)**, and the station asks the feeds
+  about a fixed, similarly coarse area. The precise geometry is computed on your device.
 - The public default post is Marine Cove, East Coast Park.
 - *Settings → Copy setup link* makes a link that pre-fills your post on another device. The coordinates sit in
   the URL fragment (`#…`), which browsers never send to servers. RedCoast strips it from the address bar
@@ -104,7 +114,8 @@ been. On the locked target, the dashed line and ring from your position are its 
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173 with live data (the relay runs inside Vite at /relay)
+npm run dev        # http://localhost:5173 with live data (the relay runs inside Vite at /relay and
+                   # fetches the feeds itself, since your computer is on a home connection)
 npm test           # unit tests (Vitest)
 npm run build      # type-check and build to dist/
 npm run basemap    # rebuild src/map/basemap.json from OpenStreetMap (add --refresh to re-download)
@@ -123,7 +134,8 @@ src/
   render/     radar scope, sky view, themes
   track/      tracks, classification, sight lines
   ui/         panels, dialogs, sound, compass, wake lock
-relay/        Cloudflare Worker
+relay/        Cloudflare Worker (relay + station mailbox) and the shared feed fetcher
+station/      home station and its macOS installer
 scripts/      basemap builder
 tests/        unit tests
 ```
@@ -133,7 +145,7 @@ tests/        unit tests
 **GitHub Pages.** `.github/workflows/pages.yml` tests, builds and deploys on every push to `main`
 (repository *Settings → Pages → Source: GitHub Actions*).
 
-**The relay.** It runs on a free Cloudflare Workers plan (100,000 requests/day):
+**The relay.** It runs on a free Cloudflare Workers plan:
 
 ```bash
 cd relay
@@ -142,18 +154,31 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-Put the printed `https://redcoast-relay.<subdomain>.workers.dev` URL in `src/config.ts`, or set it as a
-`RELAY_URL` repository variable. If you fork this, change `ALLOWED_ORIGINS` in `relay/wrangler.jsonc` to
-your own Pages origin.
+Put the printed `https://redcoast-relay.<subdomain>.workers.dev` URL in `src/config.ts` (and in
+`station/install.mjs`), or set it as a `RELAY_URL` repository variable. If you fork this, change
+`ALLOWED_ORIGINS` in `relay/wrangler.jsonc` to your own Pages origin.
 
-**Better coverage near Changi (optional).** OpenSky has receivers close to Changi that see low-flying
-arrivals the other feeds miss. Anonymous access allows 400 requests a day, about an hour of use. A free
-[OpenSky account](https://opensky-network.org) with an API client raises that to 4,000:
+**The home station.** It needs an always-on computer with a home internet connection: a Mac mini, a
+Raspberry Pi, a NAS. On a Mac:
 
 ```bash
-npx wrangler secret put OPENSKY_CLIENT_ID
-npx wrangler secret put OPENSKY_CLIENT_SECRET
+npm run station:install -- --setup --lat 1.3 --lon 103.9   # once: config + shared token + login service
+npm run station:install                                    # after updating the code
+npm run station:install -- --status                        # is it running? recent log lines
+npm run station:install -- --uninstall                     # remove the service
 ```
+
+`--setup` writes `~/Library/Application Support/RedCoast/station.json` (readable only by you), generates
+the shared token and stores it on the relay as the `STATION_TOKEN` secret. It then installs a LaunchAgent
+that starts at login and restarts if it ever stops. The log is `~/Library/Logs/redcoast-station.log`.
+Rounding `--lat/--lon` to 0.1° is plenty: the station covers a 50 nm radius. Elsewhere, run
+`npm run station` under your service manager, with `REDCOAST_STATION_CONFIG` pointing at the config file.
+
+**More OpenSky (optional).** OpenSky has receivers close to Changi that see low-flying arrivals the
+other feeds miss. Anonymous access allows 400 requests a day, about an hour of watching. A free
+[OpenSky account](https://opensky-network.org) with an API client raises that to 4,000. Add
+`"openskyClientId"` and `"openskyClientSecret"` to the station's config, then run
+`npm run station:install` again.
 
 ## Data and credits
 
@@ -167,6 +192,8 @@ npx wrangler secret put OPENSKY_CLIENT_SECRET
 
 ## Limitations
 
+- Live data needs the home station running. If that computer is off, the site says so (and you can
+  still run the simulation).
 - Coverage depends on volunteer receivers. Low-altitude traffic near Changi can be patchy, and military
   aircraft often don't broadcast at all.
 - Route databases are keyed by callsign and are sometimes out of date. RedCoast flags routes that don't fit.

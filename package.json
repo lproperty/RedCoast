@@ -16,7 +16,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "basemap": "node scripts/build-basemap.mjs",
-    "relay:deploy": "npm --prefix relay run deploy"
+    "relay:deploy": "npm --prefix relay run deploy",
+    "station": "node station/main.ts",
+    "station:install": "node station/install.mjs"
   },
   "dependencies": {
     "@fontsource/b612-mono": "^5.3.0"

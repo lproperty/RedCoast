@@ -87,6 +87,12 @@ export interface FeedResponse {
   now: number;
   sources: SourceStatus[];
   ac: FeedAircraft[];
+  /** Present when the picture comes from a home station via the relay. */
+  station?: {
+    online: boolean;
+    /** How long ago the station last pushed (null: never). */
+    ageMs: number | null;
+  };
 }
 
 /** Positions older than this are dropped: they are more misleading than useful. */

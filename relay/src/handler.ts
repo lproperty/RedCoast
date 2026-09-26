@@ -1,55 +1,46 @@
 /**
- * RedCoast relay: one small endpoint that gathers live aircraft positions around a point.
+ * RedCoast relay: the public endpoint the web app polls, plus a private mailbox for the
+ * home station.
  *
- *   GET /v1/traffic?lat=1.3&lon=103.9&r=40     (r = radius in nautical miles)
+ *   GET  /v1/traffic?lat=1.3&lon=103.9&r=40   aircraft around a point (browsers on ALLOWED_ORIGINS only)
+ *   POST /v1/push                             home station uploads its merged picture (bearer token)
+ *   GET  /v1/station                          home station asks whether anyone is watching (bearer token)
  *
- * Why it exists: the free ADS-B feeds do not send CORS headers, so a web page on
- * github.io cannot read them directly. This relay fetches them server-side, merges
- * adsb.lol (fallback adsb.fi) with the OpenSky Network, and answers only to the
- * origins listed in ALLOWED_ORIGINS, so other websites can't use it as a free proxy.
+ * Why this shape: the free feeds don't send CORS headers, so a page on github.io can't
+ * read them, and they also refuse cloud servers. So a computer at home fetches them
+ * (station/) and pushes the picture here, and browsers read it from here. Without a station
+ * (local development) the relay fetches the feeds itself.
  *
- * Written against standard fetch/Request/Response only, so the same code runs as a
- * Cloudflare Worker (worker.ts) and inside the Vite dev server (vite.config.ts).
+ * Standard fetch/Request/Response only: runs as a Cloudflare Worker (worker.ts) and in the
+ * Vite dev server (vite.config.ts).
  */
-import {
-  MAX_POSITION_AGE_MS,
-  mergeFeeds,
-  parseOpenSky,
-  parseReadsb,
-  type FeedAircraft,
-  type FeedId,
-  type FeedResponse,
-  type SourceStatus,
-} from '../../src/data/feed.ts';
+import { MAX_POSITION_AGE_MS, type FeedAircraft, type FeedResponse } from '../../src/data/feed.ts';
+import { fetchTraffic, type Ctx, type TrafficQuery, type UpstreamEnv } from './upstream.ts';
 
-export interface Env {
+export type { Ctx, TrafficQuery } from './upstream.ts';
+
+export interface Env extends UpstreamEnv {
   /** Comma-separated origins. "http://localhost:*" allows any port. */
   ALLOWED_ORIGINS?: string;
-  /** Optional OpenSky API client (free account): raises the daily budget from 400 to 4000 requests. */
-  OPENSKY_CLIENT_ID?: string;
-  OPENSKY_CLIENT_SECRET?: string;
   /** "1" when running inside the local dev server: any origin is allowed. */
   DEV?: string;
+  /** Shared secret the home station authenticates with. */
+  STATION_TOKEN?: string;
+  /** "1": when the home station is offline, fetch the feeds directly instead (they refuse Cloudflare). */
+  DIRECT_FALLBACK?: string;
 }
 
-export interface Ctx {
-  waitUntil(promise: Promise<unknown>): void;
+/** Keeps the home station's latest picture (a Durable Object in production). */
+export interface StationStore {
+  /** The latest picture, and a note that someone is watching. */
+  read(): Promise<{ at: number | null; resp: FeedResponse | null }>;
+  push(resp: FeedResponse): Promise<{ watching: boolean }>;
+  status(): Promise<{ watching: boolean; ageMs: number | null }>;
 }
 
-const USER_AGENT = 'RedCoast-Relay/1.0 (+https://github.com/lproperty/RedCoast)';
-const UPSTREAM_TIMEOUT_MS = 6000;
-/** adsb.lol updates about once a second; sharing a result for 2 s coalesces bursts and eases rate limits. */
-const READSB_TTL_MS = 2000;
-const OPENSKY_TOKEN_URL =
-  'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
-const OPENSKY_STATES_URL = 'https://opensky-network.org/api/states/all';
-
-export interface TrafficQuery {
-  lat: number;
-  lon: number;
-  /** Radius, nautical miles. */
-  r: number;
-}
+/** The station counts as online if it pushed this recently. */
+export const STATION_ONLINE_MS = 60_000;
+const MAX_PUSH_BYTES = 2_000_000;
 
 /**
  * Validates the query and coarsens it: 0.1° (~11 km) for the centre, 5 nm steps for the
@@ -85,6 +76,23 @@ export function originAllowed(origin: string | null, env: Env): boolean {
   return false;
 }
 
+/** Constant-time check of the station's bearer token. */
+export function stationAuthorized(request: Request, env: Env): boolean {
+  const expected = env.STATION_TOKEN ?? '';
+  const got = (request.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+  if (expected.length < 32 || got.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ got.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Aircraft within the query radius (the station covers a wider area than any one view needs). */
+export function withinRadius(ac: FeedAircraft[], q: TrafficQuery): FeedAircraft[] {
+  const rKm = q.r * 1.852;
+  const kx = 111.32 * Math.cos((q.lat * Math.PI) / 180);
+  return ac.filter((a) => Math.hypot((a.lat - q.lat) * 110.57, (a.lon - q.lon) * kx) <= rKm);
+}
+
 function corsHeaders(origin: string | null, env: Env): Record<string, string> {
   if (!originAllowed(origin, env)) return {};
   return {
@@ -95,200 +103,42 @@ function corsHeaders(origin: string | null, env: Env): Record<string, string> {
   };
 }
 
-function json(body: unknown, status: number, headers: Record<string, string>): Response {
+function json(body: unknown, status: number, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },
   });
 }
 
-async function fetchJson(url: string, init: RequestInit = {}): Promise<{ body: unknown; ms: number; res: Response }> {
-  const started = Date.now();
-  const res = await fetch(url, {
-    ...init,
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...(init.headers ?? {}) },
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const err = new Error(`HTTP ${res.status}`) as Error & { res?: Response };
-    err.res = res;
-    throw err;
-  }
-  return { body: await res.json(), ms: Date.now() - started, res };
-}
-
-// ---------------------------------------------------------------- adsb.lol / adsb.fi
-
-interface Result {
-  ac: FeedAircraft[];
-  status: SourceStatus;
-}
-
-const readsbCache = new Map<string, { at: number; value: Result }>();
-const readsbInflight = new Map<string, Promise<Result>>();
-
-/** Both feeds are free community services with rate limits; after a 429 we leave them alone for a while. */
-const READSB_UPSTREAMS: { id: FeedId; url: (q: TrafficQuery) => string; coolUntil: number }[] = [
-  { id: 'adsblol', url: (q) => `https://api.adsb.lol/v2/lat/${q.lat}/lon/${q.lon}/dist/${q.r}`, coolUntil: 0 },
-  { id: 'adsbfi', url: (q) => `https://opendata.adsb.fi/api/v2/lat/${q.lat}/lon/${q.lon}/dist/${q.r}`, coolUntil: 0 },
-];
-const COOL_DOWN_MS = 60_000;
-
-async function getReadsb(q: TrafficQuery): Promise<Result> {
-  const key = `${q.lat},${q.lon},${q.r}`;
-  const hit = readsbCache.get(key);
-  if (hit && Date.now() - hit.at < READSB_TTL_MS) return hit.value;
-  const pending = readsbInflight.get(key);
-  if (pending) return pending;
-
-  const task = (async (): Promise<Result> => {
-    const errors: string[] = [];
-    const now = Date.now();
-    // Prefer upstreams that aren't cooling down; if all are, try them anyway.
-    const order = [...READSB_UPSTREAMS].sort((a, b) => Number(a.coolUntil > now) - Number(b.coolUntil > now));
-    for (const upstream of order) {
-      if (upstream.coolUntil > now && order.some((u) => u.coolUntil <= now && u !== upstream)) continue;
-      try {
-        const { body, ms } = await fetchJson(upstream.url(q));
-        const ac = parseReadsb(body, upstream.id, Date.now());
-        upstream.coolUntil = 0;
-        const note = errors.length ? `fallback (${errors.join('; ')})` : undefined;
-        const value: Result = { ac, status: { id: upstream.id, ok: true, count: ac.length, ms, ...(note ? { note } : {}) } };
-        readsbCache.set(key, { at: Date.now(), value });
-        return value;
-      } catch (err) {
-        const res = (err as Error & { res?: Response }).res;
-        if (res?.status === 429) {
-          const retry = Number(res.headers.get('Retry-After'));
-          upstream.coolUntil = Date.now() + (Number.isFinite(retry) && retry > 0 ? retry * 1000 : COOL_DOWN_MS);
-        }
-        errors.push(`${upstream.id}: ${(err as Error).message}`);
-      }
-    }
-    const skipped = READSB_UPSTREAMS.filter((u) => u.coolUntil > Date.now()).map((u) => `${u.id} cooling down`);
-    return { ac: [], status: { id: 'adsblol', ok: false, count: 0, error: [...errors, ...skipped].join('; ') } };
-  })().finally(() => readsbInflight.delete(key));
-
-  readsbInflight.set(key, task);
-  return task;
-}
-
-// ---------------------------------------------------------------- OpenSky Network
-
-/**
- * OpenSky meters use in "credits": 400/day anonymous, 4000/day with a free API client.
- * A query this size costs 1 credit, so the relay refreshes at most every 6 s (with an
- * account) or 12 s (anonymous) and slows down as the day's remaining credits run low.
- */
-const opensky = {
-  token: undefined as string | undefined,
-  tokenExp: 0,
-  snapshots: new Map<string, { at: number; ms: number; ac: FeedAircraft[] }>(),
-  lastAttempt: new Map<string, number>(),
-  inflight: new Map<string, Promise<void>>(),
-  backoffUntil: 0,
-  remaining: undefined as number | undefined,
-  lastError: undefined as string | undefined,
-};
-
-function openskyIntervalMs(authed: boolean): number {
-  const base = authed ? 6000 : 12_000;
-  const left = opensky.remaining;
-  if (left === undefined) return base;
-  if (left < 20) return 300_000;
-  if (left < 100) return 60_000;
-  return base;
-}
-
-async function openskyToken(env: Env): Promise<string> {
-  if (opensky.token && Date.now() < opensky.tokenExp) return opensky.token;
-  const form = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: env.OPENSKY_CLIENT_ID ?? '',
-    client_secret: env.OPENSKY_CLIENT_SECRET ?? '',
-  });
-  const { body } = await fetchJson(OPENSKY_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  });
-  const tok = body as { access_token?: string; expires_in?: number };
-  if (!tok.access_token) throw new Error('no access_token in OpenSky response');
-  opensky.token = tok.access_token;
-  opensky.tokenExp = Date.now() + Math.max(60, (tok.expires_in ?? 1800) - 60) * 1000;
-  return opensky.token;
-}
-
-async function refreshOpenSky(q: TrafficQuery, key: string, env: Env, authed: boolean): Promise<void> {
-  opensky.lastAttempt.set(key, Date.now());
-  const dLat = q.r / 60;
-  const dLon = dLat / Math.cos((q.lat * Math.PI) / 180);
-  const url =
-    `${OPENSKY_STATES_URL}?extended=1` +
-    `&lamin=${(q.lat - dLat).toFixed(3)}&lomin=${(q.lon - dLon).toFixed(3)}` +
-    `&lamax=${(q.lat + dLat).toFixed(3)}&lomax=${(q.lon + dLon).toFixed(3)}`;
+async function stationRoute(request: Request, url: URL, env: Env, station: StationStore | undefined): Promise<Response> {
+  if (!station) return json({ error: 'this relay has no station mailbox' }, 404);
+  if (!stationAuthorized(request, env)) return json({ error: 'unauthorized' }, 401);
+  if (url.pathname === '/v1/station') return json(await station.status(), 200);
+  if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const text = await request.text();
+  if (text.length > MAX_PUSH_BYTES) return json({ error: 'picture too large' }, 413);
+  let body: Partial<FeedResponse>;
   try {
-    const headers: Record<string, string> = authed ? { Authorization: `Bearer ${await openskyToken(env)}` } : {};
-    const { body, ms, res } = await fetchJson(url, { headers });
-    const left = Number(res.headers.get('X-Rate-Limit-Remaining'));
-    if (Number.isFinite(left) && res.headers.has('X-Rate-Limit-Remaining')) opensky.remaining = left;
-    opensky.snapshots.set(key, { at: Date.now(), ms, ac: parseOpenSky(body, Date.now()) });
-    opensky.lastError = undefined;
-  } catch (err) {
-    const res = (err as Error & { res?: Response }).res;
-    if (res?.status === 429) {
-      const wait = Number(res.headers.get('X-Rate-Limit-Retry-After-Seconds'));
-      opensky.backoffUntil = Date.now() + (Number.isFinite(wait) && wait > 0 ? wait * 1000 : 600_000);
-      opensky.remaining = 0;
-    }
-    if (res?.status === 401) opensky.token = undefined;
-    opensky.lastError = (err as Error).message;
+    body = JSON.parse(text) as Partial<FeedResponse>;
+  } catch {
+    return json({ error: 'body is not JSON' }, 400);
   }
-}
-
-async function getOpenSky(q: TrafficQuery, env: Env, ctx: Ctx): Promise<Result> {
-  const authed = Boolean(env.OPENSKY_CLIENT_ID && env.OPENSKY_CLIENT_SECRET);
-  const key = `${q.lat},${q.lon},${q.r}`;
-  const now = Date.now();
-  const due =
-    now >= opensky.backoffUntil && now - (opensky.lastAttempt.get(key) ?? 0) >= openskyIntervalMs(authed);
-  if (due && !opensky.inflight.has(key)) {
-    const task = refreshOpenSky(q, key, env, authed).finally(() => opensky.inflight.delete(key));
-    opensky.inflight.set(key, task);
-    // With nothing recent cached, wait for it; otherwise answer now and refresh in the background.
-    const cached = opensky.snapshots.get(key);
-    if (!cached || now - cached.at > 20_000) await task;
-    else ctx.waitUntil(task);
-  }
-
-  const snap = opensky.snapshots.get(key);
-  const note = `${authed ? 'account' : 'anonymous'}${opensky.remaining !== undefined ? `, ${opensky.remaining} credits left` : ''}`;
-  if (!snap || Date.now() - snap.at > 120_000) {
-    return {
-      ac: [],
-      status: { id: 'opensky', ok: false, count: 0, note, error: opensky.lastError ?? (now < opensky.backoffUntil ? 'daily limit reached' : 'no data yet') },
-    };
-  }
-  return {
-    ac: snap.ac,
-    status: {
-      id: 'opensky',
-      ok: true,
-      count: snap.ac.length,
-      ms: snap.ms,
-      ageMs: Date.now() - snap.at,
-      note,
-      ...(opensky.lastError ? { error: opensky.lastError } : {}),
-    },
+  if (body?.v !== 1 || !Array.isArray(body.ac) || !Array.isArray(body.sources)) return json({ error: 'not a RedCoast picture' }, 400);
+  const clean: FeedResponse = {
+    v: 1,
+    now: Number(body.now) || Date.now(),
+    sources: body.sources.slice(0, 8),
+    ac: body.ac.filter((a) => a && typeof a.lat === 'number' && typeof a.lon === 'number' && typeof a.t === 'number').slice(0, 3000),
   };
+  return json(await station.push(clean), 200);
 }
 
-// ---------------------------------------------------------------- entry point
-
-export async function handleRequest(request: Request, env: Env, ctx: Ctx): Promise<Response> {
+export async function handleRequest(request: Request, env: Env, ctx: Ctx, station?: StationStore): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get('Origin');
   const cors = corsHeaders(origin, env);
+
+  if (url.pathname === '/v1/push' || url.pathname === '/v1/station') return stationRoute(request, url, env, station);
 
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: originAllowed(origin, env) ? 204 : 403, headers: cors });
@@ -304,9 +154,18 @@ export async function handleRequest(request: Request, env: Env, ctx: Ctx): Promi
   const q = parseQuery(url);
   if (typeof q === 'string') return json({ error: q }, 400, cors);
 
-  const [readsb, os] = await Promise.all([getReadsb(q), getOpenSky(q, env, ctx)]);
   const now = Date.now();
-  const ac = mergeFeeds([readsb.ac, os.ac]).filter((a) => now - a.t <= MAX_POSITION_AGE_MS);
-  const body: FeedResponse = { v: 1, now, sources: [readsb.status, os.status], ac };
-  return json(body, readsb.status.ok || os.status.ok ? 200 : 502, cors);
+  if (station) {
+    const snap = await station.read();
+    const ageMs = snap.at === null ? null : now - snap.at;
+    const online = ageMs !== null && ageMs < STATION_ONLINE_MS;
+    if (online || env.DIRECT_FALLBACK !== '1') {
+      const ac = snap.resp ? withinRadius(snap.resp.ac, q).filter((a) => now - a.t <= MAX_POSITION_AGE_MS) : [];
+      const body: FeedResponse = { v: 1, now, sources: snap.resp?.sources ?? [], ac, station: { online, ageMs } };
+      return json(body, 200, cors);
+    }
+  }
+
+  const body = await fetchTraffic(q, env, ctx);
+  return json(body, body.sources.some((x) => x.ok) ? 200 : 502, cors);
 }
