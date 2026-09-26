@@ -32,6 +32,8 @@ export interface Settings {
   /** Seconds of travel shown by each contact's leader line. */
   leaderS: number;
   crt: boolean;
+  /** Random echoes the sweep leaves near the centre, like the waves a real radar sees. */
+  clutter: boolean;
   /** Seconds per antenna revolution. */
   sweepS: number;
   sound: boolean;
@@ -72,6 +74,7 @@ export const DEFAULTS: Settings = {
   trailMin: 2,
   leaderS: 60,
   crt: true,
+  clutter: true,
   sweepS: 4,
   sound: false,
   volume: 0.6,
@@ -117,6 +120,8 @@ export function sanitize(raw: unknown): Settings {
   s.leaderS = clampNum(s.leaderS, 0, 300, DEFAULTS.leaderS);
   s.maxAltFt = clampNum(s.maxAltFt, 0, 60000, 0);
   s.visKm = clampNum(s.visKm, 0, 45, 0);
+  // Saved before sea clutter had its own switch, it went with the CRT effects.
+  if (!(raw && typeof raw === 'object' && 'clutter' in raw)) s.clutter = s.crt;
   s.compassOffset = clampNum(s.compassOffset, -180, 180, 0);
   if (!['ppi', 'sector'].includes(s.mode)) s.mode = DEFAULTS.mode;
   if (!['facing', 'north'].includes(s.orientation)) s.orientation = DEFAULTS.orientation;

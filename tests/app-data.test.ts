@@ -17,6 +17,13 @@ describe('settings', () => {
     expect(s.pollS).toBe(2);
   });
 
+  it('keeps sea clutter off for anyone who had turned the CRT effects off', () => {
+    expect(sanitize({ crt: false }).clutter).toBe(false);
+    expect(sanitize({ crt: true }).clutter).toBe(true);
+    expect(sanitize({ crt: false, clutter: true }).clutter).toBe(true);
+    expect(sanitize(null).clutter).toBe(true);
+  });
+
   it('reads a setup link', () => {
     const p = parseHash('#lat=1.25&lon=103.95&facing=160&fov=120&h=45');
     expect(p?.observer).toMatchObject({ lat: 1.25, lon: 103.95, facing: 160, fov: 120, heightM: 45 });

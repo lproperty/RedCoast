@@ -932,9 +932,11 @@ export class Scope {
         const last = this.litAt.get(it.t.hex);
         if (hit && (last === undefined || now - last > periodMs * 0.3)) this.litAt.set(it.t.hex, now);
       }
-      if (st.crt) {
+      if (st.clutter) {
+        // Fewer echoes on a smaller scope, so a phone looks as sparse as a desktop.
+        const density = Math.min(1, (this.R / 400) ** 2);
         const swept = this.half >= 180 ? (sweep.a - prev + 360) % 360 : Math.abs(sweep.a - prev);
-        const n = swept < 90 ? Math.floor(swept * 0.35 + Math.random()) : 0;
+        const n = swept < 90 ? Math.floor(swept * 0.35 * density + Math.random()) : 0;
         for (let i = 0; i < n; i++) {
           const r = (this.R * (0.05 + Math.random() ** 2 * 0.5)) / this.kmPx;
           const a = (this.rot + sweep.a - sweep.dir * Math.random() * swept) * DEG;
