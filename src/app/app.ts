@@ -344,7 +344,16 @@ export class App {
 
   // ------------------------------------------------------------ rendering
 
-  private readonly frameLoop = (): void => {
+  /** Phones render at ~30 fps to save battery during long balcony sessions; desktops use the display rate. */
+  private readonly minFrameMs = matchMedia('(pointer: coarse)').matches ? 32 : 0;
+  private lastFrame = 0;
+
+  private readonly frameLoop = (ts: number): void => {
+    if (ts - this.lastFrame < this.minFrameMs) {
+      requestAnimationFrame(this.frameLoop);
+      return;
+    }
+    this.lastFrame = ts;
     const now = Date.now();
     const s = this.settings.get();
     const heading = this.pointing ? normDeg(this.pointing.az + s.compassOffset) : s.observer.facing;
