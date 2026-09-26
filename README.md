@@ -203,7 +203,12 @@ other feeds miss. Anonymous access allows 400 requests a day, about an hour of w
 
 - A $30 RTL-SDR receiver on the balcony would give near-perfect coverage of exactly your view. Point
   *Settings → Data → My own receiver* at its `aircraft.json`, and feeding adsb.lol/OpenSky helps everyone
-  (and earns more OpenSky credits).
+  (and earns more OpenSky credits). Check local rules first: in Singapore, owning radio receivers that tune
+  above 30 MHz is reportedly restricted, so confirm with IMDA.
+- A **LISTEN** button in the target panel that opens [LiveATC's Changi feeds](https://www.liveatc.net/search/?icao=wsss)
+  for flights arriving at or leaving Changi. Controllers use the radio callsign already shown in the panel
+  ("Scooter 244"), so you can match what you hear to what's on the scope. The feeds are run by volunteers:
+  they lag a few seconds, don't cover every frequency, and sometimes go offline.
 - A camera-overlay AR mode on top of point mode.
 
 ## License
