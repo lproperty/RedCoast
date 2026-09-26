@@ -42,6 +42,13 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
 
 Keyboard: `+`/`−` range · `M` scope mode · `N` north-up · `J`/`K` next/previous contact · `S` sound · `Esc` release · `,` settings.
 
+### Add to your iPhone home screen
+
+Open [RedCoast](https://lproperty.github.io/RedCoast/) in Safari, tap **Share → Add to Home Screen**,
+leave **Open as Web App** enabled if shown, then tap **Add**. The red-and-white aircraft radar icon
+opens RedCoast in its own window. See [Apple's guide](https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios).
+If an existing home-screen shortcut still shows the old green icon, remove that shortcut and add it again.
+
 ### Reading the scope
 
 | Symbol | Meaning |
@@ -119,7 +126,13 @@ npm run dev        # http://localhost:5173 with live data (the relay runs inside
 npm test           # unit tests (Vitest)
 npm run build      # type-check and build to dist/
 npm run basemap    # rebuild src/map/basemap.json from OpenStreetMap (add --refresh to re-download)
+npm run icons      # regenerate Safari/PWA PNGs from public/favicon.svg
 ```
+
+The app icons use a white background and a red aircraft radar mark. Edit `public/favicon.svg`, then run
+`npm run icons` and commit the PNGs. Keep the artwork within the central 40% radius for maskable icons;
+the square background is opaque so each device can apply its own corner shape. When changing the icons,
+bump the `v=` value in `index.html` and `public/manifest.webmanifest` so browsers request the new assets.
 
 Open `http://localhost:5173/#src=sim` for simulated traffic. `npm run dev` also listens on your LAN, so you
 can open it on your phone at the "Network" address Vite prints.
