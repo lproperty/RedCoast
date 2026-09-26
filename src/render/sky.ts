@@ -266,32 +266,12 @@ export class SkyView {
     }
   }
 
-  /** The Sun and Moon, labelled. Returns the space they take, for the ruler and aircraft labels to avoid. */
+  /** The Sun and Moon. Returns the space they take, for the ruler and aircraft labels to avoid. */
   private drawBodies(ctx: CanvasRenderingContext2D, s: SkyInput): Box[] {
     const p = s.palette;
     const taken: Box[] = [];
     const within = (az: number) => Math.abs(signedDeg(az - this.center)) < this.span / 2;
-    // Where drawAircraft counts the aircraft off each side.
-    const midY = this.top + this.plotH * 0.55;
-    const counters = [
-      { x: this.left, y: midY - 7, w: 40, h: 14 },
-      { x: this.w - this.right - 40, y: midY - 7, w: 40, h: 14 },
-    ];
-    // Beside the body, on whichever side has room; left out if neither does.
-    const label = (text: string, x: number, y: number, r: number) => {
-      taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
-      ctx.font = `9px ${FONT}`;
-      const w = ctx.measureText(text).width + 4;
-      const spot = [x + r + 2, x - r - 2 - w]
-        .map((lx): Box => ({ x: lx, y: y - 7, w, h: 14 }))
-        .find((b) => b.x >= this.left && b.x + b.w <= this.w - this.right && ![...counters, ...taken].some((o) => overlaps(b, o)));
-      if (!spot) return;
-      taken.push(spot);
-      ctx.fillStyle = p.textDim;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, spot.x + 2, y);
-    };
+    const take = (x: number, y: number, r: number) => taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
     if (s.sun.el > -1 && within(s.sun.az)) {
       const x = this.x(s.sun.az);
       const y = this.y(s.sun.el);
@@ -308,7 +288,7 @@ export class SkyView {
         ctx.lineTo(x + Math.cos(a) * 12, y + Math.sin(a) * 12);
         ctx.stroke();
       }
-      label('SUN', x, y, 12);
+      take(x, y, 12);
     }
     if (s.moon.el > -1 && within(s.moon.az)) {
       const x = this.x(s.moon.az);
@@ -355,7 +335,7 @@ export class SkyView {
       ctx.beginPath();
       ctx.arc(x, y, r, 0, TAU);
       ctx.stroke();
-      label(s.moon.fraction > 0.97 ? 'FULL MOON' : 'MOON', x, y, r + 2);
+      take(x, y, r + 2);
     }
     return taken;
   }
@@ -464,7 +444,6 @@ export class SkyView {
     ctx.font = `10px ${FONT}`;
     ctx.fillStyle = p.textDim;
     ctx.textBaseline = 'middle';
-    // drawBodies keeps its labels clear of these counters.
     const midY = this.top + this.plotH * 0.55;
     if (offLeft) {
       ctx.textAlign = 'left';
