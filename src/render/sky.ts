@@ -32,6 +32,30 @@ export interface SkyInput {
 const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
 const TAU = Math.PI * 2;
 const EL_LINES = [5, 10, 20, 30, 45, 60];
+/** The Moon's darker "seas" as [x, y, radius] on a unit disc, so it reads as the Moon, not a ball. */
+const MARIA: [number, number, number][] = [
+  [-0.35, -0.3, 0.3],
+  [-0.45, 0.15, 0.28],
+  [0.2, -0.35, 0.2],
+  [0.35, 0, 0.24],
+  [-0.05, 0.45, 0.18],
+  [0.68, -0.2, 0.12],
+];
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/** A "#rrggbb" colour with alpha. */
+function rgba(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
 
 export class SkyView {
   private readonly ctx: CanvasRenderingContext2D;
@@ -196,11 +220,20 @@ export class SkyView {
       ctx.fillText(m.label, x, this.horizonY - 5);
     }
 
-    // A fist at arm's length is about 10°: a ruler you always carry.
+    const taken = this.drawBodies(ctx, s);
+
+    // A fist at arm's length is about 10°: a ruler you always carry. Top left, unless the Sun or
+    // Moon is there.
+    ctx.font = `8.5px ${FONT}`;
     const fistW = (plotW * FIST_DEG) / this.span;
-    const fx = this.left + 8;
+    const rulerW = Math.max(fistW, ctx.measureText('1 FIST = 10°').width) + 8;
+    const ruler = (x: number): Box => ({ x: x - 4, y: this.top + 4, w: rulerW, h: 24 });
+    let fx = this.left + 8;
+    if (taken.some((b) => overlaps(b, ruler(fx)))) fx = this.w - this.right - rulerW + 4;
     const fy = this.top + 12;
+    taken.push(ruler(fx));
     ctx.strokeStyle = p.textDim;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(fx, fy - 3);
     ctx.lineTo(fx, fy);
@@ -212,8 +245,7 @@ export class SkyView {
     ctx.textBaseline = 'top';
     ctx.fillText('1 FIST = 10°', fx, fy + 3);
 
-    this.drawBodies(ctx, s);
-    this.drawAircraft(ctx, s);
+    this.drawAircraft(ctx, s, taken);
 
     if (s.pointer) {
       const x = this.x(s.pointer.az);
@@ -234,14 +266,38 @@ export class SkyView {
     }
   }
 
-  private drawBodies(ctx: CanvasRenderingContext2D, s: SkyInput): void {
+  /** The Sun and Moon, labelled. Returns the space they take, for the ruler and aircraft labels to avoid. */
+  private drawBodies(ctx: CanvasRenderingContext2D, s: SkyInput): Box[] {
     const p = s.palette;
+    const taken: Box[] = [];
     const within = (az: number) => Math.abs(signedDeg(az - this.center)) < this.span / 2;
+    // Where drawAircraft counts the aircraft off each side.
+    const midY = this.top + this.plotH * 0.55;
+    const counters = [
+      { x: this.left, y: midY - 7, w: 40, h: 14 },
+      { x: this.w - this.right - 40, y: midY - 7, w: 40, h: 14 },
+    ];
+    // Beside the body, on whichever side has room; left out if neither does.
+    const label = (text: string, x: number, y: number, r: number) => {
+      taken.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r });
+      ctx.font = `9px ${FONT}`;
+      const w = ctx.measureText(text).width + 4;
+      const spot = [x + r + 2, x - r - 2 - w]
+        .map((lx): Box => ({ x: lx, y: y - 7, w, h: 14 }))
+        .find((b) => b.x >= this.left && b.x + b.w <= this.w - this.right && ![...counters, ...taken].some((o) => overlaps(b, o)));
+      if (!spot) return;
+      taken.push(spot);
+      ctx.fillStyle = p.textDim;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, spot.x + 2, y);
+    };
     if (s.sun.el > -1 && within(s.sun.az)) {
       const x = this.x(s.sun.az);
       const y = this.y(s.sun.el);
       ctx.fillStyle = p.sun;
       ctx.strokeStyle = p.sun;
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(x, y, 6, 0, TAU);
       ctx.fill();
@@ -252,45 +308,66 @@ export class SkyView {
         ctx.lineTo(x + Math.cos(a) * 12, y + Math.sin(a) * 12);
         ctx.stroke();
       }
+      label('SUN', x, y, 12);
     }
     if (s.moon.el > -1 && within(s.moon.az)) {
       const x = this.x(s.moon.az);
       const y = this.y(s.moon.el);
       const r = 6;
+      // Moonlight: a soft halo, brighter the fuller the Moon.
+      const halo = ctx.createRadialGradient(x, y, r, x, y, r * 3);
+      halo.addColorStop(0, rgba(p.moon, 0.1 + 0.18 * s.moon.fraction));
+      halo.addColorStop(1, rgba(p.moon, 0));
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 3, 0, TAU);
+      ctx.fill();
       // The lit limb points at the Sun, wherever it is (even below the horizon).
       const sunY = this.horizonY - this.plotH * Math.sign(s.sun.el) * Math.sqrt(Math.min(90, Math.abs(s.sun.el)) / 90);
       const angle = Math.atan2(sunY - y, this.x(s.sun.az) - x);
       const k = 1 - 2 * s.moon.fraction;
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(angle);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, TAU);
       ctx.fill();
-      ctx.fillStyle = p.moon;
+      ctx.rotate(angle);
       ctx.beginPath();
       ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
       // Terminator: bulges into the lit half for a crescent, into the dark half when gibbous.
       ctx.ellipse(0, 0, Math.abs(k) * r, r, 0, Math.PI / 2, -Math.PI / 2, k > 0);
+      ctx.fillStyle = rgba(p.moon, 0.9);
       ctx.fill();
-      ctx.strokeStyle = p.moon;
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, TAU);
-      ctx.stroke();
+      // The seas, on the lit part only.
+      ctx.clip();
+      ctx.rotate(-angle);
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      for (const [mx, my, mr] of MARIA) {
+        ctx.beginPath();
+        ctx.arc(mx * r, my * r, mr * r, 0, TAU);
+        ctx.fill();
+      }
       ctx.restore();
+      // The whole disc's rim, dark side included.
+      ctx.strokeStyle = rgba(p.moon, 0.35);
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.stroke();
+      label(s.moon.fraction > 0.97 ? 'FULL MOON' : 'MOON', x, y, r + 2);
     }
+    return taken;
   }
 
-  private drawAircraft(ctx: CanvasRenderingContext2D, s: SkyInput): void {
+  private drawAircraft(ctx: CanvasRenderingContext2D, s: SkyInput, taken: Box[]): void {
     const p = s.palette;
     const now = s.now;
     const o = s.observer;
     this.hits = [];
     let offLeft = 0;
     let offRight = 0;
-    const labelBoxes: { x: number; y: number; w: number; h: number }[] = [];
+    const labelBoxes: Box[] = [...taken];
     ctx.font = `10px ${FONT}`;
     ctx.textBaseline = 'middle';
 
@@ -355,7 +432,7 @@ export class SkyView {
       const spot = candidates.find(([lx, ly]) => {
         const box = { x: lx, y: ly - 6, w, h: 12 };
         if (box.x < this.left || box.x + w > this.w - this.right || box.y < this.top) return false;
-        return !labelBoxes.some((b) => box.x < b.x + b.w && box.x + box.w > b.x && box.y < b.y + b.h && box.y + box.h > b.y);
+        return !labelBoxes.some((b) => overlaps(box, b));
       });
       if (spot || t === s.selected) {
         const [lx, ly] = spot ?? candidates[0]!;
@@ -387,6 +464,7 @@ export class SkyView {
     ctx.font = `10px ${FONT}`;
     ctx.fillStyle = p.textDim;
     ctx.textBaseline = 'middle';
+    // drawBodies keeps its labels clear of these counters.
     const midY = this.top + this.plotH * 0.55;
     if (offLeft) {
       ctx.textAlign = 'left';
