@@ -300,7 +300,7 @@ function links(t: Track): string {
   return out.length ? `<nav class="d-links">${out.join('')}</nav>` : '';
 }
 
-const SECTIONS = ['head', 'look', 'route', 'photo', 'aircraft', 'telemetry', 'links'] as const;
+const SECTIONS = ['head', 'route', 'look', 'photo', 'aircraft', 'telemetry', 'links'] as const;
 type Section = (typeof SECTIONS)[number];
 
 export class DetailPanel {
