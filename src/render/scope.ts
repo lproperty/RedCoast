@@ -1133,6 +1133,58 @@ export class Scope {
         ctx.stroke();
       }
     }
+    // Last, so no data block covers it.
+    if (sel && !items.some((i) => i.t === sel)) {
+      ctx.save();
+      ctx.fillStyle = p.selected;
+      this.drawOffScope(ctx, s, sel);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * The locked target when it's off the scope (beyond the range, or outside the fan): an arrow on
+   * the rim pointing its way, with how far it is, so a plane picked in the sky view isn't lost.
+   */
+  private drawOffScope(ctx: CanvasRenderingContext2D, s: ScopeInput, t: Track): void {
+    const d = t.display(s.now);
+    const [px, py] = this.project(d.x, d.y);
+    const a = Math.max(-this.half, Math.min(this.half, this.polar(px, py)[0])) * DEG;
+    const ux = Math.sin(a);
+    const uy = -Math.cos(a);
+    const r = this.R - 4;
+    const x = this.cx + ux * r;
+    const y = this.cy + uy * r;
+    const k = 6 + Math.sin(s.now / 250);
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x + ux * k, y + uy * k);
+    ctx.lineTo(x - ux * k * 0.6 - uy * k * 0.8, y - uy * k * 0.6 + ux * k * 0.8);
+    ctx.lineTo(x - ux * k * 0.6 + uy * k * 0.8, y - uy * k * 0.6 - ux * k * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    const unitKm = s.settings.units === 'aviation' ? KM_PER_NM : 1;
+    const dist = Math.hypot(d.x, d.y) / unitKm;
+    const text = `${displayName(t)} ${dist < 10 ? dist.toFixed(1) : Math.round(dist)} ${s.settings.units === 'aviation' ? 'NM' : 'KM'}`;
+    ctx.font = `${this.fs(10)}px ${this.font}`;
+    ctx.textBaseline = 'middle';
+    // Text sits inside the rim, on the side facing the centre.
+    const tx = this.cx + ux * (r - 12);
+    const ty = this.cy + uy * (r - 14);
+    const align = ux > 0.35 ? 'right' : ux < -0.35 ? 'left' : 'center';
+    const w = ctx.measureText(text).width;
+    const left = align === 'right' ? tx - w : align === 'center' ? tx - w / 2 : tx;
+    const h = this.fs(10) + 6;
+    // A dark backing, so it reads even over another contact's data block.
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(left - 4, ty - h / 2, w + 8, h);
+    ctx.strokeStyle = s.palette.selected;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left - 4, ty - h / 2, w + 8, h);
+    ctx.fillStyle = s.palette.selected;
+    ctx.textAlign = 'left';
+    ctx.fillText(text, left, ty);
   }
 
   /** Target lock: brackets, electronic bearing line, variable range marker and predicted path. */
@@ -1148,8 +1200,11 @@ export class Scope {
     ctx.strokeStyle = p.selected;
     ctx.fillStyle = p.selected;
 
-    // Predicted path for the next three minutes.
+    // Predicted path for the next three minutes, on the scope only.
     if (!t.a.gnd && t.a.gs) {
+      ctx.save();
+      this.shape(ctx);
+      ctx.clip();
       ctx.setLineDash([2, 4]);
       ctx.lineWidth = 1;
       ctx.globalAlpha = 0.7;
@@ -1161,7 +1216,7 @@ export class Scope {
         else ctx.lineTo(fx, fy);
       }
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
     if (!it) {
       ctx.restore();
