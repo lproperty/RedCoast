@@ -164,7 +164,7 @@ type FieldKind = 'num' | 'bool' | 'str';
 const FIELDS: Record<string, FieldKind> = {
   mode: 'str', orientation: 'str', theme: 'str', units: 'str', labels: 'str',
   trailMin: 'num', leaderS: 'num', sweepS: 'num', maxAltFt: 'num', visKm: 'num', showGround: 'bool', crt: 'bool', clutter: 'bool',
-  sound: 'bool', volume: 'num', alertView: 'bool', alertSpecial: 'bool', alertNew: 'bool',
+  alertView: 'bool', alertSpecial: 'bool', alertNew: 'bool',
   keepAwake: 'bool', compassOffset: 'num', source: 'str', customUrl: 'str', pollS: 'num', relayUrl: 'str',
 };
 
@@ -226,9 +226,7 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
           <label class="check"><input type="checkbox" name="crt"> CRT effects (scanlines, darker edges; radar green only)</label>
           <label class="check"><input type="checkbox" name="clutter"> Sea clutter (random echoes near the centre)</label>
         </section>
-        <section class="grid"><h3>ALERTS</h3>
-          <label class="check"><input type="checkbox" name="sound"> Sound on</label>
-          <label>Volume <input name="volume" type="range" min="0" max="1" step="0.05"></label>
+        <section class="grid"><h3>POP-UPS</h3>
           <label class="check"><input type="checkbox" name="alertView"> A plane enters your view</label>
           <label class="check"><input type="checkbox" name="alertSpecial"> Special aircraft (A380, 747, military…)</label>
           <label class="check"><input type="checkbox" name="alertNew"> Every new contact (busy!)</label>
@@ -259,7 +257,7 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
             Map © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.
             Type: B612 Mono, designed for Airbus cockpit displays.</p>
           <p class="small">Keys: <kbd>+</kbd>/<kbd>−</kbd> range · <kbd>M</kbd> scope · <kbd>N</kbd> north-up ·
-            <kbd>J</kbd>/<kbd>K</kbd> next/previous contact · <kbd>S</kbd> sound · <kbd>Esc</kbd> release target.</p>
+            <kbd>J</kbd>/<kbd>K</kbd> next/previous contact · <kbd>Esc</kbd> release target.</p>
           <p class="small dim">For fun and plane-spotting only; not for navigation. Coverage depends on volunteer receivers,
             so some aircraft (especially military) may be missing.</p>
         </section>

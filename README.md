@@ -32,8 +32,8 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
   the aircraft, plus a fact about each type (the A380 is a Singapore Airlines story).
 - **It knows Changi.** It classifies arrivals, departures and overflights, spots aircraft lined up on each
   runway, and works out which way Changi is operating (runway 02 or 20).
-- **Alerts.** "Entering your view", special aircraft (A380, 747, military…) and emergency squawks, with
-  synthesised console sounds and a tactical log.
+- **Alerts.** "Entering your view", special aircraft (A380, 747, military…) and emergency squawks, as
+  pop-ups and a tactical log.
 - **Phone friendly.** Add it to your home screen, keep the screen awake, and use **point mode**: hold the
   phone up at the sky and it tells you what you're pointing at (uses the compass).
 - **Simulation mode.** Demo traffic for when the data link is down, or just to see it in action.
@@ -45,7 +45,7 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
 2. Tap a contact (on the scope, the sky view or the list) to lock it and open the target panel.
 3. Zoom with **− / +**, the mouse wheel or a pinch. **PPI/SECTOR** and **VIEW UP/NORTH UP** switch the display.
 
-Keyboard: `+`/`−` range · `M` scope mode · `N` north-up · `J`/`K` next/previous contact · `S` sound · `Esc` release · `,` settings.
+Keyboard: `+`/`−` range · `M` scope mode · `N` north-up · `J`/`K` next/previous contact · `Esc` release · `,` settings.
 
 ### Add to your iPhone home screen
 
@@ -151,7 +151,7 @@ src/
   map/        basemap (OSM) and map features
   render/     radar scope, sky view, themes
   track/      tracks, classification, sight lines
-  ui/         panels, dialogs, sound, compass, wake lock
+  ui/         panels, dialogs, compass, wake lock
 relay/        Cloudflare Worker (relay + station mailbox) and the shared feed fetcher
 station/      home station and its macOS installer
 scripts/      basemap builder

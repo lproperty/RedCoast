@@ -16,7 +16,6 @@ import { classify, emergencyText, FlowMonitor } from '../track/classify.ts';
 import { CLEAR_AIR, closestApproach, conditionsFor, lookGuide, trackSight, viewEntryS, type Conditions } from '../track/sight.ts';
 import { TrackStore } from '../track/store.ts';
 import type { Track } from '../track/track.ts';
-import { Sfx } from '../ui/audio.ts';
 import { DetailPanel } from '../ui/detail.ts';
 import { SettingsDialog, SetupDialog } from '../ui/dialogs.ts';
 import { clockSgt, clockZulu, displayName, fmtDuration, fmtSeeing, pad3, timeSgt } from '../ui/format.ts';
@@ -45,7 +44,6 @@ export class App {
   private readonly enricher: Enricher;
   private readonly scope: Scope;
   private readonly sky: SkyView;
-  private readonly sfx = new Sfx();
   private readonly compass: Compass;
   private readonly keepAwake = new KeepAwake();
   private readonly poller: Poller;
@@ -144,8 +142,6 @@ export class App {
   start(): void {
     const s = this.settings.get();
     applyThemeToCss(this.palette);
-    this.sfx.enabled = s.sound;
-    this.sfx.volume = s.volume;
     this.settings.subscribe((next, prev) => this.onSettings(next, prev));
     this.bindControls();
     this.syncHud();
@@ -315,7 +311,7 @@ export class App {
     }
   }
 
-  /** Log lines, sounds and toasts for things worth knowing about. */
+  /** Log lines and pop-ups for things worth knowing about. */
   private events(t: Track, now: number, rangeKm: number, quiet: boolean): void {
     const s = this.settings.get();
     const tn = `TN${String(t.tn).padStart(3, '0')}`;
@@ -331,7 +327,6 @@ export class App {
           'info',
           t.hex,
         );
-        if (s.alertNew) this.sfx.play('contact');
       }
     }
     if (t.cls.emergency && !t.flags.emergency) {
@@ -339,7 +334,6 @@ export class App {
       const what = emergencyText(t.cls.emergency);
       this.log.add(`!! ${tn} ${name} SQUAWKING ${t.a.sq ?? ''} · ${what}`, 'alert', t.hex);
       this.toasts.show(`⚠ ${name} squawking ${t.a.sq ?? ''} (${what})`, 'alert', t.hex, 15000);
-      this.sfx.play('alarm');
     }
     if (t.cls.special && !t.flags.special && !t.a.gnd && t.sight.groundKm < 80) {
       t.flags.special = true;
@@ -348,7 +342,6 @@ export class App {
         this.log.add(`★ ${t.cls.special.toUpperCase()} · ${name} · ${where.toUpperCase()}`, 'special', t.hex);
         if (s.alertSpecial) {
           this.toasts.show(`★ ${t.cls.special}: ${name}, ${where}`, 'special', t.hex);
-          this.sfx.play('special');
         }
       }
     }
@@ -360,7 +353,6 @@ export class App {
         if (s.alertView && now - this.lastViewToast > 6000) {
           this.lastViewToast = now;
           this.toasts.show(`👁 ${name} in view: ${guide}`, 'view', t.hex);
-          this.sfx.play('view');
         }
       }
     }
@@ -371,7 +363,6 @@ export class App {
   private select(t: Track | undefined): void {
     this.selected = t;
     if (t) {
-      this.sfx.play('lock');
       if (!t.a.sim) this.enricher.want(t.hex, t.a.cs, 1000, true);
     }
     this.refreshPanels();
@@ -584,8 +575,6 @@ export class App {
     // A sector always looks the way you face.
     orient.disabled = s.mode === 'sector';
     orient.hidden = s.mode === 'sector';
-    $('[data-act="sound"]').setAttribute('aria-pressed', String(s.sound));
-    $('[data-act="sound"]').textContent = s.sound ? 'SND ON' : 'SND OFF';
     $('.sky-facing').textContent = `FACING ${compassPoint(s.observer.facing)} ${pad3(s.observer.facing)}° · VIEW ${Math.round(s.observer.fov)}°`;
     $('.post').textContent = s.configured ? s.observer.name.toUpperCase() : 'DEFAULT POST · TAP ⚙ TO SET YOURS';
   }
@@ -612,8 +601,6 @@ export class App {
       applyThemeToCss(this.palette);
     }
     if (next.rangeKm !== prev.rangeKm && next.rangeKm > prev.rangeKm) this.poller.kick();
-    this.sfx.enabled = next.sound;
-    this.sfx.volume = next.volume;
     if (next.keepAwake !== prev.keepAwake) void this.keepAwake.set(next.keepAwake);
     document.body.classList.toggle('no-crt', !next.crt || !this.palette.console);
     this.analyze();
@@ -639,14 +626,6 @@ export class App {
     on('mode', () => this.settings.update((s) => ({ mode: s.mode === 'ppi' ? 'sector' : 'ppi' })));
     on('orient', () => this.settings.update((s) => ({ orientation: s.orientation === 'north' ? 'facing' : 'north' })));
     on('settings', () => this.settingsDlg.open());
-    on('sound', () => {
-      this.sfx.unlock();
-      this.settings.update((s) => ({ sound: !s.sound }));
-      if (this.settings.get().sound) {
-        this.sfx.enabled = true;
-        this.sfx.play('view');
-      }
-    });
     on('retry', () => this.poller.kick());
     on('run-sim', () => this.settings.update({ source: 'sim' }));
     const pointBtn = $<HTMLButtonElement>('[data-act="point"]');
@@ -767,10 +746,6 @@ export class App {
         case 'n':
         case 'N':
           $('[data-act="orient"]').click();
-          break;
-        case 's':
-        case 'S':
-          $('[data-act="sound"]').click();
           break;
         case 'j':
         case 'ArrowDown':

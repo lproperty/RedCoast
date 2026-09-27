@@ -36,8 +36,6 @@ export interface Settings {
   clutter: boolean;
   /** Seconds per antenna revolution. */
   sweepS: number;
-  sound: boolean;
-  volume: number;
   alertNew: boolean;
   alertView: boolean;
   alertSpecial: boolean;
@@ -76,8 +74,6 @@ export const DEFAULTS: Settings = {
   crt: true,
   clutter: true,
   sweepS: 4,
-  sound: false,
-  volume: 0.6,
   alertNew: false,
   alertView: true,
   alertSpecial: true,
@@ -115,7 +111,6 @@ export function sanitize(raw: unknown): Settings {
   s.rangeKm = (RANGES_KM as readonly number[]).includes(s.rangeKm) ? s.rangeKm : DEFAULTS.rangeKm;
   s.sweepS = clampNum(s.sweepS, 1.5, 12, DEFAULTS.sweepS);
   s.pollS = clampNum(s.pollS, 2, 30, DEFAULTS.pollS);
-  s.volume = clampNum(s.volume, 0, 1, DEFAULTS.volume);
   s.trailMin = clampNum(s.trailMin, 0, 10, DEFAULTS.trailMin);
   s.leaderS = clampNum(s.leaderS, 0, 300, DEFAULTS.leaderS);
   s.maxAltFt = clampNum(s.maxAltFt, 0, 60000, 0);
