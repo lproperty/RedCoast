@@ -62,7 +62,7 @@ If an existing home-screen shortcut still shows an older icon, remove that short
 | △ | Departing |
 | □ | Overflight |
 | ○ | Local or unknown |
-| ◇ (amber) | Military |
+| ◇ | Military |
 | ⊕ | Helicopter |
 | ■ (flashing) | Emergency squawk (7500/7600/7700) |
 

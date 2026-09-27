@@ -269,7 +269,11 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
     document.body.append(this.dlg);
     this.form = this.dlg.querySelector('form')!;
 
-    this.form.addEventListener('input', (e) => this.onField(e.target as HTMLInputElement));
+    this.form.addEventListener('input', (e) => {
+      // A URL is applied when it's finished (on change): each keystroke would switch the data source.
+      const el = e.target as HTMLInputElement;
+      if (el.type !== 'url') this.onField(el);
+    });
     this.form.addEventListener('change', (e) => this.onField(e.target as HTMLInputElement));
     this.dlg.querySelector('[data-act="edit-post"]')!.addEventListener('click', () => {
       this.dlg.close();
