@@ -9,7 +9,7 @@ import { normDeg } from '../geo/geo.ts';
 import type { Observer } from '../track/sight.ts';
 
 export type Units = 'metric' | 'aviation';
-export type ThemeName = 'phosphor' | 'amber' | 'night';
+export type ThemeName = 'phosphor' | 'graphite';
 export type ScopeMode = 'ppi' | 'sector';
 export type Orientation = 'facing' | 'north';
 export type SourceKind = 'live' | 'sim' | 'custom';
@@ -125,7 +125,7 @@ export function sanitize(raw: unknown): Settings {
   s.compassOffset = clampNum(s.compassOffset, -180, 180, 0);
   if (!['ppi', 'sector'].includes(s.mode)) s.mode = DEFAULTS.mode;
   if (!['facing', 'north'].includes(s.orientation)) s.orientation = DEFAULTS.orientation;
-  if (!['phosphor', 'amber', 'night'].includes(s.theme)) s.theme = DEFAULTS.theme;
+  if (!['phosphor', 'graphite'].includes(s.theme)) s.theme = DEFAULTS.theme;
   if (!['metric', 'aviation'].includes(s.units)) s.units = DEFAULTS.units;
   if (!['full', 'compact', 'off'].includes(s.labels)) s.labels = DEFAULTS.labels;
   if (!['live', 'sim', 'custom'].includes(s.source)) s.source = DEFAULTS.source;

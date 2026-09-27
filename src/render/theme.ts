@@ -7,6 +7,10 @@ import type { Kind } from '../track/classify.ts';
 
 export interface Palette {
   name: ThemeName;
+  /** Font family for the canvases and the panels. */
+  font: string;
+  /** The military console look: glowing text, and scanlines if the CRT setting is on. */
+  console: boolean;
   /** "r,g,b" of the main phosphor colour, for gradients with varying alpha. */
   rgb: string;
   bg: string;
@@ -36,9 +40,14 @@ export interface Palette {
   moon: string;
 }
 
+const CONSOLE_FONT = '"B612 Mono", ui-monospace, Menlo, Consolas, monospace';
+const SYSTEM_FONT = '-apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
 export const PALETTES: Record<ThemeName, Palette> = {
   phosphor: {
     name: 'phosphor',
+    font: CONSOLE_FONT,
+    console: true,
     rgb: '51,255,102',
     bg: '#010603',
     scopeCenter: '#04200e',
@@ -73,77 +82,45 @@ export const PALETTES: Record<ThemeName, Palette> = {
     sun: '#ffe680',
     moon: '#d9ffe4',
   },
-  amber: {
-    name: 'amber',
-    rgb: '255,176,0',
-    bg: '#070400',
-    scopeCenter: '#241600',
-    scopeEdge: '#0a0600',
-    land: 'rgba(255,176,0,0.07)',
-    coast: 'rgba(255,190,60,0.5)',
-    park: 'rgba(255,215,130,0.75)',
-    ring: 'rgba(255,176,0,0.25)',
-    ringText: 'rgba(255,200,90,0.62)',
-    tick: 'rgba(255,190,70,0.6)',
-    runway: 'rgba(255,200,100,0.6)',
-    centerline: 'rgba(255,180,40,0.28)',
-    centerlineActive: 'rgba(255,215,120,0.7)',
-    fov: 'rgba(255,176,0,0.05)',
-    fovEdge: 'rgba(255,196,80,0.45)',
-    landmark: 'rgba(255,205,110,0.6)',
-    text: '#ffd488',
-    textDim: 'rgba(255,200,110,0.55)',
+  // For everyone else: a quiet grey with the system font, arrivals soft blue and departures soft
+  // orange, and none of the console's glow or scanlines.
+  graphite: {
+    name: 'graphite',
+    font: SYSTEM_FONT,
+    console: false,
+    rgb: '200,205,212',
+    bg: '#121315',
+    scopeCenter: '#23262b',
+    scopeEdge: '#141518',
+    land: 'rgba(255,255,255,0.07)',
+    coast: 'rgba(215,220,228,0.42)',
+    park: 'rgba(230,233,238,0.65)',
+    ring: 'rgba(210,215,222,0.2)',
+    ringText: 'rgba(215,220,228,0.55)',
+    tick: 'rgba(215,220,228,0.5)',
+    runway: 'rgba(235,238,242,0.6)',
+    centerline: 'rgba(210,215,222,0.22)',
+    centerlineActive: 'rgba(240,242,246,0.7)',
+    fov: 'rgba(255,255,255,0.045)',
+    fovEdge: 'rgba(220,224,230,0.38)',
+    landmark: 'rgba(220,224,230,0.55)',
+    text: '#eceef1',
+    textDim: 'rgba(215,220,228,0.58)',
     kinds: {
-      ARR: '#ffc233',
-      DEP: '#ffe39a',
-      OVF: '#b37a00',
-      LOCAL: '#fff06a',
-      UNK: '#d9a441',
-      GND: '#7a5200',
+      ARR: '#8cc8ff',
+      DEP: '#ffc27a',
+      OVF: '#b4b9c2',
+      LOCAL: '#c8b4ff',
+      UNK: '#9aa0aa',
+      GND: '#5d626b',
     },
-    mil: '#ff7a45',
-    emerg: '#ff3030',
-    selected: '#fff4dc',
-    sky: '#120b00',
-    skyHorizon: '#2e1d00',
-    sun: '#fff1b3',
-    moon: '#fff0cc',
-  },
-  night: {
-    name: 'night',
-    rgb: '255,50,40',
-    bg: '#040000',
-    scopeCenter: '#1a0200',
-    scopeEdge: '#060000',
-    land: 'rgba(255,40,30,0.06)',
-    coast: 'rgba(255,60,45,0.4)',
-    park: 'rgba(255,110,90,0.6)',
-    ring: 'rgba(255,40,30,0.22)',
-    ringText: 'rgba(255,80,60,0.55)',
-    tick: 'rgba(255,70,55,0.5)',
-    runway: 'rgba(255,80,60,0.55)',
-    centerline: 'rgba(255,50,40,0.25)',
-    centerlineActive: 'rgba(255,100,80,0.6)',
-    fov: 'rgba(255,40,30,0.045)',
-    fovEdge: 'rgba(255,70,55,0.4)',
-    landmark: 'rgba(255,90,70,0.5)',
-    text: '#ff7a66',
-    textDim: 'rgba(255,90,70,0.5)',
-    kinds: {
-      ARR: '#ff5a4a',
-      DEP: '#ff8f75',
-      OVF: '#a3261d',
-      LOCAL: '#ff7a3d',
-      UNK: '#c9453a',
-      GND: '#5c130e',
-    },
-    mil: '#ffae8f',
-    emerg: '#ffffff',
-    selected: '#ffd6cf',
-    sky: '#0d0100',
-    skyHorizon: '#260402',
-    sun: '#ff9b80',
-    moon: '#ffc2b5',
+    mil: '#f29bc4',
+    emerg: '#ff5f57',
+    selected: '#ffffff',
+    sky: '#17191d',
+    skyHorizon: '#383c44',
+    sun: '#ffd27a',
+    moon: '#f2f3f5',
   },
 };
 
@@ -159,5 +136,7 @@ export function applyThemeToCss(p: Palette): void {
   root.setProperty('--mil', p.mil);
   root.setProperty('--emerg', p.emerg);
   root.setProperty('--sel', p.selected);
+  root.setProperty('--font', p.font);
+  root.setProperty('--glow', p.console ? '0 0 6px rgba(var(--rgb), 0.55)' : 'none');
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', p.bg);
 }

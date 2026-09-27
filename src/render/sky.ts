@@ -34,7 +34,6 @@ export interface SkyInput {
   light?: (t: Track) => { flash: number; glow: number } | undefined;
 }
 
-const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
 const TAU = Math.PI * 2;
 const EL_LINES = [5, 10, 20, 30, 60];
 /** Degrees: the smaller, the more of the strip goes to the low sky. */
@@ -77,6 +76,7 @@ export class SkyView {
   private w = 0;
   private h = 0;
   private dpr = 1;
+  private font = '';
   private left = 34;
   private right = 10;
   private top = 10;
@@ -127,6 +127,7 @@ export class SkyView {
   }
 
   render(s: SkyInput): void {
+    this.font = s.palette.font;
     this.resize();
     const ctx = this.ctx;
     const p = s.palette;
@@ -168,7 +169,7 @@ export class SkyView {
     }
 
     // Elevation grid.
-    ctx.font = `9px ${FONT}`;
+    ctx.font = `9px ${this.font}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'right';
     ctx.lineWidth = 1;
@@ -217,7 +218,7 @@ export class SkyView {
     ctx.closePath();
     ctx.fill();
 
-    ctx.font = `8.5px ${FONT}`;
+    ctx.font = `8.5px ${this.font}`;
     ctx.textBaseline = 'bottom';
     const usedX: number[] = [];
     const marks: Box[] = [];
@@ -243,7 +244,7 @@ export class SkyView {
 
     // A fist at arm's length is about 10°: a ruler you always carry. Top left, unless the Sun or
     // Moon is there.
-    ctx.font = `8.5px ${FONT}`;
+    ctx.font = `8.5px ${this.font}`;
     const fistW = (plotW * FIST_DEG) / this.span;
     const rulerW = Math.max(fistW, ctx.measureText('1 FIST = 10°').width) + 8;
     const ruler = (x: number): Box => ({ x: x - 4, y: this.top + 4, w: rulerW, h: 24 });
@@ -448,7 +449,7 @@ export class SkyView {
     let offLeft = 0;
     let offRight = 0;
     const labelBoxes: Box[] = [...taken];
-    ctx.font = `10px ${FONT}`;
+    ctx.font = `10px ${this.font}`;
     ctx.textBaseline = 'middle';
 
     const items = s.tracks
@@ -528,7 +529,7 @@ export class SkyView {
       ctx.stroke();
     }
 
-    ctx.font = `10px ${FONT}`;
+    ctx.font = `10px ${this.font}`;
     ctx.fillStyle = p.textDim;
     ctx.textBaseline = 'middle';
     const midY = this.top + this.plotH * 0.55;
@@ -546,7 +547,7 @@ export class SkyView {
       const d = s.selected.display(now);
       const sight = sightAt(o, d.x, d.y, s.selected.trueAltitude(now));
       const text = `${displayName(s.selected)}: ${lookGuide(sight).text}`;
-      ctx.font = `bold 11px ${FONT}`;
+      ctx.font = `bold 11px ${this.font}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const w = ctx.measureText(text).width + 12;

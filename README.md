@@ -15,7 +15,7 @@ It shows live positions around Changi, what each aircraft is, where it's going, 
   fades until the next pass), range rings, a bearing scale, the OpenStreetMap coastline, runways, and Changi's
   approach centrelines with nautical-mile ticks. Your view is at the top by default. **Sector** mode turns it
   into a forward-looking fan that uses every pixel for what's in front of you, and the scope shrinks to fit
-  the fan.
+  the fan. Not into radar consoles? The **Graphite** theme is a quiet grey with the phone's own font.
 - **Contacts that move smoothly.** Positions arrive every few seconds; between reports each aircraft is
   dead-reckoned along its track (including turns), and new fixes are blended in so symbols never jump.
 - **Sky view.** A panorama of what you see from your post: direction across, height above the horizon up.

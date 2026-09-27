@@ -82,7 +82,6 @@ interface LabelBox {
   slot: number;
 }
 
-const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
 const TAU = Math.PI * 2;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -187,6 +186,7 @@ export class Scope {
   private w = 0;
   private h = 0;
   private dpr = 1;
+  private font = '';
   private cx = 0;
   private cy = 0;
   private R = 100;
@@ -504,7 +504,7 @@ export class Scope {
     ctx.setLineDash([]);
     const mid = (a0 + a1) / 2;
     ctx.fillStyle = p.fovEdge;
-    ctx.font = `${this.fs(9)}px ${FONT}`;
+    ctx.font = `${this.fs(9)}px ${this.font}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('YOUR VIEW', this.cx + Math.cos(mid) * this.R * 0.93, this.cy + Math.sin(mid) * this.R * 0.93);
@@ -541,7 +541,7 @@ export class Scope {
       if (active) {
         const [lx, ly] = this.project(...s.frame.toXY(line.ticks[4]!.at.lat, line.ticks[4]!.at.lon));
         ctx.fillStyle = p.centerlineActive;
-        ctx.font = `${this.fs(9)}px ${FONT}`;
+        ctx.font = `${this.fs(9)}px ${this.font}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(end.id, lx + 6, ly);
@@ -580,7 +580,7 @@ export class Scope {
     const step = ringStep(range);
     ctx.strokeStyle = p.ring;
     ctx.lineWidth = 1;
-    ctx.font = `${this.fs(9.5)}px ${FONT}`;
+    ctx.font = `${this.fs(9.5)}px ${this.font}`;
     ctx.fillStyle = p.ringText;
     ctx.textBaseline = 'middle';
     // Labels sit along a line off to one side, just inside each ring, so they never hide the forward view.
@@ -605,7 +605,7 @@ export class Scope {
   private drawLandmarks(ctx: CanvasRenderingContext2D, s: ScopeInput): void {
     const p = s.palette;
     const range = s.settings.rangeKm;
-    ctx.font = `${this.fs(9)}px ${FONT}`;
+    ctx.font = `${this.fs(9)}px ${this.font}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     for (const lm of LANDMARKS) {
@@ -653,7 +653,7 @@ export class Scope {
       ctx.stroke();
       if (b % 30 === 0) {
         const cardinal = ({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' } as Record<number, string>)[b];
-        ctx.font = cardinal ? `bold ${this.fs(12)}px ${FONT}` : `${this.fs(9.5)}px ${FONT}`;
+        ctx.font = cardinal ? `bold ${this.fs(12)}px ${this.font}` : `${this.fs(9.5)}px ${this.font}`;
         ctx.fillText(cardinal ?? pad3(b), this.cx + sin * (this.R + 18), this.cy - cos * (this.R + 18));
       }
     }
@@ -919,6 +919,7 @@ export class Scope {
   // ------------------------------------------------------------ frame
 
   render(s: ScopeInput): void {
+    this.font = s.palette.font;
     this.resize();
     this.layout(s);
     this.cacheMap(s.frame);
@@ -1066,7 +1067,7 @@ export class Scope {
 
     // Data blocks: fewer lines when the picture gets busy for the size of the display.
     if (st.labels === 'off') return;
-    ctx.font = `${this.fs(11)}px ${FONT}`;
+    ctx.font = `${this.fs(11)}px ${this.font}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     const room = (this.half >= 180 ? Math.PI : this.half * DEG) * this.R * this.R;

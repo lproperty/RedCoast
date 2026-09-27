@@ -17,6 +17,12 @@ describe('settings', () => {
     expect(s.pollS).toBe(2);
   });
 
+  it('moves anyone on a retired theme back to radar green', () => {
+    expect(sanitize({ theme: 'amber' }).theme).toBe('phosphor');
+    expect(sanitize({ theme: 'night' }).theme).toBe('phosphor');
+    expect(sanitize({ theme: 'graphite' }).theme).toBe('graphite');
+  });
+
   it('keeps sea clutter off for anyone who had turned the CRT effects off', () => {
     expect(sanitize({ crt: false }).clutter).toBe(false);
     expect(sanitize({ crt: true }).clutter).toBe(true);

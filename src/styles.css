@@ -31,6 +31,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 12px/1.45 var(--font);
+  /* Figures line up in columns in the proportional (Graphite) font too. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }

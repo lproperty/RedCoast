@@ -214,7 +214,7 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
         <section class="grid"><h3>DISPLAY</h3>
           <label>Scope <select name="mode"><option value="ppi">PPI · 360° round scope</option><option value="sector">Sector · forward fan</option></select></label>
           <label>Orientation <select name="orientation"><option value="facing">Your view at the top</option><option value="north">North at the top</option></select></label>
-          <label>Theme <select name="theme"><option value="phosphor">Phosphor green</option><option value="amber">Amber</option><option value="night">Night red (keeps night vision)</option></select></label>
+          <label>Theme <select name="theme"><option value="phosphor">Radar green</option><option value="graphite">Graphite grey</option></select></label>
           <label>Units <select name="units"><option value="metric">Metric (km, m)</option><option value="aviation">Aviation (nm, ft, kt)</option></select></label>
           <label>Data blocks <select name="labels"><option value="full">Full</option><option value="compact">Compact</option><option value="off">Off</option></select></label>
           <label>History trail <select name="trailMin"><option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option><option value="5">5 min</option></select></label>
@@ -223,7 +223,7 @@ B77W LHR      aircraft type, and where it came from (arrivals) or is going (depa
           <label>Altitude filter <select name="maxAltFt"><option value="0">Show all</option><option value="30000">Below 30,000 ft</option><option value="20000">Below 20,000 ft</option><option value="10000">Below 10,000 ft</option><option value="5000">Below 5,000 ft</option></select></label>
           <label>Sweep: one pass every <output data-for="sweepS"></output><input name="sweepS" type="range" min="2" max="8" step="0.5"></label>
           <label class="check"><input type="checkbox" name="showGround"> Show aircraft on the ground</label>
-          <label class="check"><input type="checkbox" name="crt"> CRT effects (scanlines, darker edges)</label>
+          <label class="check"><input type="checkbox" name="crt"> CRT effects (scanlines, darker edges; radar green only)</label>
           <label class="check"><input type="checkbox" name="clutter"> Sea clutter (random echoes near the centre)</label>
         </section>
         <section class="grid"><h3>ALERTS</h3>

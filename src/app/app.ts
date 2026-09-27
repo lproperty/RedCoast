@@ -615,7 +615,7 @@ export class App {
     this.sfx.enabled = next.sound;
     this.sfx.volume = next.volume;
     if (next.keepAwake !== prev.keepAwake) void this.keepAwake.set(next.keepAwake);
-    document.body.classList.toggle('no-crt', !next.crt);
+    document.body.classList.toggle('no-crt', !next.crt || !this.palette.console);
     this.analyze();
     this.syncHud();
     this.refreshPanels();
@@ -632,7 +632,7 @@ export class App {
   }
 
   private bindControls(): void {
-    document.body.classList.toggle('no-crt', !this.settings.get().crt);
+    document.body.classList.toggle('no-crt', !this.settings.get().crt || !this.palette.console);
     const on = (act: string, fn: () => void) => $(`[data-act="${act}"]`).addEventListener('click', fn);
     on('range-in', () => this.zoom(-1));
     on('range-out', () => this.zoom(1));
