@@ -118,7 +118,6 @@ export const HORIZON_MARKS: { label: string; lat: number; lon: number }[] = [
   { label: 'CHANGI', lat: 1.3644, lon: 103.9915 },
   { label: 'MBS', lat: 1.2837, lon: 103.8607 },
   { label: 'STADIUM', lat: 1.3045, lon: 103.8743 },
-  { label: 'BEDOK JETTY', lat: 1.3064, lon: 103.9418 },
   { label: 'BATAM', lat: 1.1318, lon: 104.0554 },
   { label: 'SENTOSA', lat: 1.2497, lon: 103.8298 },
   { label: 'P. UBIN', lat: 1.4134, lon: 103.9659 },
