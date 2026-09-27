@@ -10,6 +10,7 @@ import { CLEAR_AIR, FIST_DEG, lookGuide, sightAt, type Air, type Observer } from
 import type { Track } from '../track/track.ts';
 import { displayName, fmtDist, pad3 } from '../ui/format.ts';
 import type { Palette } from './theme.ts';
+import { whiten } from './scope.ts';
 import type { LocalFrame } from '../geo/geo.ts';
 import type { Units } from '../app/settings.ts';
 
@@ -29,6 +30,8 @@ export interface SkyInput {
   pointer?: { az: number; el: number };
   /** How far you can see today: aircraft lost in haze or cloud are drawn faint. */
   air?: Air;
+  /** How lit the radar's sweep has left an aircraft, when the radar shows it too. */
+  light?: (t: Track) => { flash: number; glow: number } | undefined;
 }
 
 const FONT = '"B612 Mono", ui-monospace, Menlo, monospace';
@@ -131,7 +134,8 @@ export class SkyView {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.w, this.h);
 
-    this.span = Math.min(300, Math.max(120, o.fov + 50));
+    // A little of the sky either side of the view; less on a phone, where width is precious.
+    this.span = Math.min(300, Math.max(120, o.fov + (this.w < 560 ? 20 : 50)));
     this.center = s.center;
     this.horizonY = this.h - 22;
     this.plotH = this.horizonY - this.top;
@@ -216,6 +220,7 @@ export class SkyView {
     ctx.font = `8.5px ${FONT}`;
     ctx.textBaseline = 'bottom';
     const usedX: number[] = [];
+    const marks: Box[] = [];
     for (const m of HORIZON_MARKS) {
       const [mx, my] = s.frame.toXY(m.lat, m.lon);
       const az = (Math.atan2(mx, my) / DEG + 360) % 360;
@@ -230,9 +235,11 @@ export class SkyView {
       ctx.stroke();
       ctx.fillStyle = p.landmark;
       ctx.fillText(m.label, x, this.horizonY - 5);
+      const tw = ctx.measureText(m.label).width;
+      marks.push({ x: x - tw / 2, y: this.horizonY - 15, w: tw, h: 11 });
     }
 
-    const taken = this.drawBodies(ctx, s);
+    const taken = [...this.drawBodies(ctx, s), ...marks];
 
     // A fist at arm's length is about 10°: a ruler you always carry. Top left, unless the Sun or
     // Moon is there.
@@ -352,6 +359,41 @@ export class SkyView {
     return taken;
   }
 
+  /** An aircraft: a triangle pointing down for arrivals, up for departures, a ring otherwise. */
+  private drawSymbol(ctx: CanvasRenderingContext2D, t: Track, x: number, y: number, color: string, alpha: number, flash: number): void {
+    const lit = flash > 0.02;
+    const size = (t.cls.heli ? 4 : 4.5) * (1 + 0.2 * flash);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, alpha + flash);
+    ctx.strokeStyle = lit ? whiten(color, 0.55 * flash) : color;
+    ctx.lineWidth = 1.4 + 0.8 * flash;
+    ctx.lineJoin = 'round';
+    if (lit) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10 * flash * this.dpr;
+    }
+    ctx.beginPath();
+    if (t.cls.kind === 'ARR') {
+      ctx.moveTo(x - size, y - size * 0.7);
+      ctx.lineTo(x + size, y - size * 0.7);
+      ctx.lineTo(x, y + size);
+      ctx.closePath();
+    } else if (t.cls.kind === 'DEP') {
+      ctx.moveTo(x - size, y + size * 0.7);
+      ctx.lineTo(x + size, y + size * 0.7);
+      ctx.lineTo(x, y - size);
+      ctx.closePath();
+    } else {
+      ctx.arc(x, y, size * 0.8, 0, TAU);
+    }
+    if (lit) {
+      ctx.fillStyle = whiten(color, 0.3 * flash, 0.45 * flash);
+      ctx.fill();
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private drawAircraft(ctx: CanvasRenderingContext2D, s: SkyInput, taken: Box[]): void {
     const p = s.palette;
     const now = s.now;
@@ -372,6 +414,8 @@ export class SkyView {
       .filter(({ sight }) => sight.slantKm < 80 && sight.el > -2)
       .sort((a, b) => (a.t === s.selected ? -1 : b.t === s.selected ? 1 : a.sight.slantKm - b.sight.slantKm));
 
+    // Symbols first, each claiming its spot, so no label ends up on top of another aircraft.
+    const shown: { t: Track; km: number; x: number; y: number; faint: boolean; color: string; text: number }[] = [];
     for (const { t, sight } of items) {
       const rel = signedDeg(sight.az - this.center);
       if (Math.abs(rel) > this.span / 2) {
@@ -382,64 +426,57 @@ export class SkyView {
       const x = this.x(sight.az);
       const y = this.y(sight.el);
       const faint = !sight.visible;
-
-      // Last minute of motion across your sky.
-      ctx.fillStyle = color;
-      for (const h of t.history) {
-        if (now - h.t > 90_000) continue;
-        const hs = sightAt(o, h.x, h.y, h.alt ?? t.trueAltitude(now));
-        ctx.globalAlpha = 0.35;
-        ctx.fillRect(this.x(hs.az) - 1, this.y(hs.el) - 1, 2, 2);
-      }
-      ctx.globalAlpha = faint ? 0.45 : 1;
-
-      const size = t.cls.heli ? 4 : 4.5;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      if (t.cls.kind === 'ARR') {
-        ctx.moveTo(x - size, y - size * 0.7);
-        ctx.lineTo(x + size, y - size * 0.7);
-        ctx.lineTo(x, y + size);
-        ctx.closePath();
-      } else if (t.cls.kind === 'DEP') {
-        ctx.moveTo(x - size, y + size * 0.7);
-        ctx.lineTo(x + size, y + size * 0.7);
-        ctx.lineTo(x, y - size);
-        ctx.closePath();
-      } else {
-        ctx.arc(x, y, size * 0.8, 0, TAU);
-      }
-      ctx.stroke();
+      // Pulse with the radar: flare as its sweep passes, then fade until the next pass.
+      const light = s.light?.(t);
+      const keep = t === s.selected || t.cls.emergency;
+      const flash = light?.flash ?? 0;
+      const glow = light && !keep ? light.glow : 1;
+      const body = (faint ? 0.45 : 1) * (0.45 + 0.55 * glow);
+      this.drawSymbol(ctx, t, x, y, color, body, flash);
+      labelBoxes.push({ x: x - 6, y: y - 6, w: 12, h: 12 });
       this.hits.push({ t, x, y });
+      shown.push({ t, km: sight.slantKm, x, y, faint, color, text: (faint ? 0.5 : 1) * (0.75 + 0.25 * glow) });
+    }
 
-      const label = `${displayName(t)} ${fmtDist(sight.slantKm, s.units)}`;
+    // Then labels, nearest first, where they fit. A phone has room for a few: aircraft lost in
+    // the haze go unlabelled there, and so do the far ones once the strip gets busy.
+    const narrow = this.w < 560;
+    let labelled = 0;
+    for (const { t, km, x, y, faint, color, text } of shown) {
+      const sel = t === s.selected;
+      if (!sel && narrow && (faint || labelled >= 6)) continue;
+      const label = `${displayName(t)} ${fmtDist(km, s.units)}`;
       const w = ctx.measureText(label).width + 4;
       const candidates: [number, number][] = [
         [x + 8, y - 8],
         [x - 8 - w, y - 8],
         [x + 8, y + 8],
         [x - 8 - w, y + 8],
+        [x - w / 2, y - 14],
+        [x + 8, y - 20],
+        [x - 8 - w, y - 20],
       ];
       const spot = candidates.find(([lx, ly]) => {
         const box = { x: lx, y: ly - 6, w, h: 12 };
         if (box.x < this.left || box.x + w > this.w - this.right || box.y < this.top) return false;
+        if (box.y + 12 > this.horizonY + 2) return false;
         return !labelBoxes.some((b) => overlaps(box, b));
       });
-      if (spot || t === s.selected) {
-        const [lx, ly] = spot ?? candidates[0]!;
-        labelBoxes.push({ x: lx, y: ly - 6, w, h: 12 });
-        ctx.fillStyle = t === s.selected ? p.selected : color;
-        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-        ctx.lineWidth = 3;
-        ctx.lineJoin = 'round';
-        ctx.textAlign = 'left';
-        ctx.strokeText(label, lx + 2, ly);
-        ctx.fillText(label, lx + 2, ly);
-      }
+      if (!spot && !sel) continue;
+      const [lx, ly] = spot ?? candidates[0]!;
+      labelBoxes.push({ x: lx, y: ly - 6, w, h: 12 });
+      labelled++;
+      ctx.globalAlpha = sel ? 1 : text;
+      ctx.fillStyle = sel ? p.selected : color;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.textAlign = 'left';
+      ctx.strokeText(label, lx + 2, ly);
+      ctx.fillText(label, lx + 2, ly);
       ctx.globalAlpha = 1;
 
-      if (t === s.selected) {
+      if (sel) {
         const k = 10 + Math.sin(now / 250) * 1.2;
         ctx.strokeStyle = p.selected;
         ctx.lineWidth = 1.4;

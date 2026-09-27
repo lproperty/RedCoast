@@ -167,7 +167,7 @@ const TEXT_FLOOR = 0.8;
 const rgbCache = new Map<string, [number, number, number]>();
 
 /** A "#rrggbb" colour blended towards white by f (0..1), optionally see-through. */
-function whiten(color: string, f: number, alpha = 1): string {
+export function whiten(color: string, f: number, alpha = 1): string {
   let c = rgbCache.get(color);
   if (!c) {
     if (!/^#[0-9a-f]{6}$/i.test(color)) return color;
@@ -204,6 +204,9 @@ export class Scope {
   private paints: Paint[] = [];
   /** When the sweep last passed each contact, by hex. */
   private readonly litAt = new Map<string, number>();
+  /** Contacts drawn in the last frame, and the sweep period then, for the sky view to match. */
+  private onScope = new Set<string>();
+  private periodMs = 4000;
   private prevSweep: number | undefined;
   private hits: { t: Track; x: number; y: number }[] = [];
   private labels = new Map<string, LabelBox>();
@@ -770,6 +773,14 @@ export class Scope {
     return { flash: Math.exp(-dt / Math.min(450, periodMs * 0.1)), glow: Math.exp(-dt / (periodMs * 0.45)) };
   }
 
+  /**
+   * How lit a contact is right now, so other views can pulse with the sweep; undefined when the
+   * scope isn't showing it (off the edge, outside the range), and so isn't being swept.
+   */
+  sweepLight(t: Track, now: number): { flash: number; glow: number } | undefined {
+    return this.onScope.has(t.hex) ? this.lit(t, now, this.periodMs) : undefined;
+  }
+
   /** The contact's symbol. When the sweep has just lit it, it flares: whiter, bolder, filled and glowing. */
   private drawSymbol(ctx: CanvasRenderingContext2D, t: Track, x: number, y: number, color: string, flash = 0): void {
     const lit = flash > 0.02;
@@ -922,6 +933,7 @@ export class Scope {
 
     // Where is every contact on screen right now?
     const periodMs = st.sweepS * 1000;
+    this.periodMs = periodMs;
     const sweep = this.sweepAt(now, periodMs);
     const prev = this.prevSweep;
     this.prevSweep = sweep.a;
@@ -961,6 +973,7 @@ export class Scope {
         }
       }
     }
+    this.onScope = new Set(items.map((it) => it.t.hex));
     if (this.litAt.size > 400) {
       for (const [hex, at] of this.litAt) if (now - at > periodMs * 4) this.litAt.delete(hex);
     }

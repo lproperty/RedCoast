@@ -433,6 +433,7 @@ export class App {
         sun: this.sun,
         moon: this.moon,
         air: this.seeing.air,
+        light: (t) => this.scope.sweepLight(t, now),
         pointer: this.pointing?.upright ? { az: heading, el: this.pointing.el } : undefined,
       });
     } catch (err) {
