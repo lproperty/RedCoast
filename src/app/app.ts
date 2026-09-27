@@ -247,8 +247,9 @@ export class App {
     this.seeing = conditionsFor(this.wx, s.visKm, this.sun.el, now);
     const air = this.seeing.air;
     // New weather, a new setting or nightfall changes what's visible without any plane moving:
-    // take the new picture as it is, without "entering your view" alerts.
-    const quiet = air.rangeKm !== before.rangeKm || air.ceilingFt !== before.ceilingFt;
+    // take the new picture as it is, without "entering your view" alerts. The same goes for the
+    // first picture: planes already in view when you open the app didn't just enter it.
+    const quiet = !this.pictureBuilt || air.rangeKm !== before.rangeKm || air.ceilingFt !== before.ceilingFt;
 
     for (const t of this.store.list()) {
       t.route = t.a.sim ? simRoute(t.a.cs, t.a.sim.from, t.a.sim.to) : this.enricher.route(t.a.cs);
