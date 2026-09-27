@@ -394,6 +394,52 @@ export class SkyView {
     ctx.restore();
   }
 
+  /**
+   * An aircraft's flight code and distance, at the first spot beside it clear of `avoid`.
+   * Returns false when there's none; the locked target's label goes in regardless.
+   */
+  private drawLabel(
+    ctx: CanvasRenderingContext2D,
+    s: SkyInput,
+    it: { t: Track; km: number; x: number; y: number; color: string },
+    alpha: number,
+    avoid: Box[],
+    taken: Box[],
+  ): boolean {
+    const { t, x, y } = it;
+    const sel = t === s.selected;
+    const label = `${displayName(t)} ${fmtDist(it.km, s.units)}`;
+    const w = ctx.measureText(label).width + 4;
+    const candidates: [number, number][] = [
+      [x + 8, y - 8],
+      [x - 8 - w, y - 8],
+      [x + 8, y + 8],
+      [x - 8 - w, y + 8],
+      [x - w / 2, y - 14],
+      [x + 8, y - 20],
+      [x - 8 - w, y - 20],
+    ];
+    const spot = candidates.find(([lx, ly]) => {
+      const box = { x: lx, y: ly - 6, w, h: 12 };
+      if (box.x < this.left || box.x + w > this.w - this.right || box.y < this.top) return false;
+      if (box.y + 12 > this.horizonY + 2) return false;
+      return !avoid.some((b) => overlaps(box, b));
+    });
+    if (!spot && !sel) return false;
+    const [lx, ly] = spot ?? candidates[0]!;
+    taken.push({ x: lx, y: ly - 6, w, h: 12 });
+    ctx.globalAlpha = sel ? 1 : alpha;
+    ctx.fillStyle = sel ? s.palette.selected : it.color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.textAlign = 'left';
+    ctx.strokeText(label, lx + 2, ly);
+    ctx.fillText(label, lx + 2, ly);
+    ctx.globalAlpha = 1;
+    return true;
+  }
+
   private drawAircraft(ctx: CanvasRenderingContext2D, s: SkyInput, taken: Box[]): void {
     const p = s.palette;
     const now = s.now;
@@ -415,7 +461,17 @@ export class SkyView {
       .sort((a, b) => (a.t === s.selected ? -1 : b.t === s.selected ? 1 : a.sight.slantKm - b.sight.slantKm));
 
     // Symbols first, each claiming its spot, so no label ends up on top of another aircraft.
-    const shown: { t: Track; km: number; x: number; y: number; faint: boolean; color: string; text: number }[] = [];
+    const shown: {
+      t: Track;
+      km: number;
+      x: number;
+      y: number;
+      faint: boolean;
+      color: string;
+      text: number;
+      swept: number;
+    }[] = [];
+    const symbols: Box[] = [];
     for (const { t, sight } of items) {
       const rel = signedDeg(sight.az - this.center);
       if (Math.abs(rel) > this.span / 2) {
@@ -433,61 +489,43 @@ export class SkyView {
       const glow = light && !keep ? light.glow : 1;
       const body = (faint ? 0.45 : 1) * (0.45 + 0.55 * glow);
       this.drawSymbol(ctx, t, x, y, color, body, flash);
-      labelBoxes.push({ x: x - 6, y: y - 6, w: 12, h: 12 });
+      symbols.push({ x: x - 6, y: y - 6, w: 12, h: 12 });
       this.hits.push({ t, x, y });
-      shown.push({ t, km: sight.slantKm, x, y, faint, color, text: (faint ? 0.5 : 1) * (0.75 + 0.25 * glow) });
+      const text = (faint ? 0.5 : 1) * (0.75 + 0.25 * glow);
+      shown.push({ t, km: sight.slantKm, x, y, faint, color, text, swept: light && !keep ? light.glow : 0 });
     }
 
     // Then labels, nearest first, where they fit. A phone has room for a few: aircraft lost in
     // the haze go unlabelled there, and so do the far ones once the strip gets busy.
     const narrow = this.w < 560;
     let labelled = 0;
-    for (const { t, km, x, y, faint, color, text } of shown) {
-      const sel = t === s.selected;
-      if (!sel && narrow && (faint || labelled >= 6)) continue;
-      const label = `${displayName(t)} ${fmtDist(km, s.units)}`;
-      const w = ctx.measureText(label).width + 4;
-      const candidates: [number, number][] = [
-        [x + 8, y - 8],
-        [x - 8 - w, y - 8],
-        [x + 8, y + 8],
-        [x - 8 - w, y + 8],
-        [x - w / 2, y - 14],
-        [x + 8, y - 20],
-        [x - 8 - w, y - 20],
-      ];
-      const spot = candidates.find(([lx, ly]) => {
-        const box = { x: lx, y: ly - 6, w, h: 12 };
-        if (box.x < this.left || box.x + w > this.w - this.right || box.y < this.top) return false;
-        if (box.y + 12 > this.horizonY + 2) return false;
-        return !labelBoxes.some((b) => overlaps(box, b));
-      });
-      if (!spot && !sel) continue;
-      const [lx, ly] = spot ?? candidates[0]!;
-      labelBoxes.push({ x: lx, y: ly - 6, w, h: 12 });
-      labelled++;
-      ctx.globalAlpha = sel ? 1 : text;
-      ctx.fillStyle = sel ? p.selected : color;
-      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.lineWidth = 3;
-      ctx.lineJoin = 'round';
-      ctx.textAlign = 'left';
-      ctx.strokeText(label, lx + 2, ly);
-      ctx.fillText(label, lx + 2, ly);
-      ctx.globalAlpha = 1;
+    const later: typeof shown = [];
+    for (const it of shown) {
+      if (it.t !== s.selected && narrow && (it.faint || labelled >= 6)) later.push(it);
+      else if (this.drawLabel(ctx, s, it, it.text, [...labelBoxes, ...symbols], labelBoxes)) labelled++;
+      else if (it.t !== s.selected) later.push(it);
+    }
+    // The rest get a label while the radar's sweep has them lit, fading out with them, so the
+    // strip comes alive as the beam goes round. Over another aircraft's symbol, if need be.
+    for (const it of later) {
+      const fade = Math.min(1, (it.swept - 0.3) / 0.3);
+      if (fade <= 0) continue;
+      this.drawLabel(ctx, s, it, it.text * fade, [...labelBoxes, ...symbols], labelBoxes) ||
+        this.drawLabel(ctx, s, it, it.text * fade, labelBoxes, labelBoxes);
+    }
 
-      if (sel) {
-        const k = 10 + Math.sin(now / 250) * 1.2;
-        ctx.strokeStyle = p.selected;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-          ctx.moveTo(x + sx * k, y + sy * (k - 4));
-          ctx.lineTo(x + sx * k, y + sy * k);
-          ctx.lineTo(x + sx * (k - 4), y + sy * k);
-        }
-        ctx.stroke();
+    const sel = shown.find((it) => it.t === s.selected);
+    if (sel) {
+      const k = 10 + Math.sin(now / 250) * 1.2;
+      ctx.strokeStyle = p.selected;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+        ctx.moveTo(sel.x + sx * k, sel.y + sy * (k - 4));
+        ctx.lineTo(sel.x + sx * k, sel.y + sy * k);
+        ctx.lineTo(sel.x + sx * (k - 4), sel.y + sy * k);
       }
+      ctx.stroke();
     }
 
     ctx.font = `10px ${FONT}`;
