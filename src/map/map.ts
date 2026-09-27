@@ -101,7 +101,6 @@ export const LANDMARKS: Landmark[] = [
   { label: 'SINGAPORE FLYER', kind: 'landmark', lat: 1.2894, lon: 103.8633, maxRange: 10 },
   { label: 'NATIONAL STADIUM', kind: 'landmark', lat: 1.3045, lon: 103.8743, maxRange: 10 },
   { label: 'JEWEL', kind: 'landmark', lat: 1.3602, lon: 103.9897, maxRange: 10 },
-  { label: 'BEDOK JETTY', kind: 'landmark', lat: 1.3064, lon: 103.9418, maxRange: 15 },
   { label: 'MARINE COVE', kind: 'landmark', lat: 1.3018, lon: 103.9128, maxRange: 10 },
   { label: 'TANAH MERAH FT', kind: 'landmark', lat: 1.3146, lon: 103.9891, maxRange: 10 },
   { label: 'EAST COAST PARK', kind: 'place', lat: 1.2985, lon: 103.9275, minRange: 5, maxRange: 25 },
